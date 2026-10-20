@@ -170,6 +170,7 @@ cython_debug/
 data/repos/copies
 notebooks/
 *logs/
+namerts_artifacts/
 
 # run_evaluation writes these summaries into cwd
 gold.*.json

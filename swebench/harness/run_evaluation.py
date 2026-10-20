@@ -33,6 +33,14 @@ from swebench.harness.docker_utils import (
 )
 import logging
 from swebench.harness.grading import get_eval_report
+from swebench.harness.namerts.artifacts import make_error_report
+from swebench.harness.namerts.evaluation import (
+    is_unsupported_instance,
+    reusable_regression_report,
+    run_regression_evaluation,
+    skipped_upstream_report,
+    terminal_timeout_report,
+)
 from swebench.harness.reporting import make_run_report
 from swebench.harness.modal_eval import (
     run_instances_modal,
@@ -235,6 +243,11 @@ def run_instance(
     rewrite_reports: bool = False,
     skip_patch: bool = False,
     task_repo: str | None = None,
+    instance: dict | None = None,
+    namerts_artifact_root: str | None = None,
+    namerts_workers: int = 4,
+    namerts_per_file_timeout: int = 120,
+    namerts_timeout: int = 7_200,
 ):
     """
     Run a single instance with the given prediction.
@@ -270,7 +283,34 @@ def run_instance(
             f.write(json.dumps(report, indent=4))
         return instance_id, report
     if report_path.exists():
-        return instance_id, json.loads(report_path.read_text())
+        report = json.loads(report_path.read_text())
+        if namerts_artifact_root is None or reusable_regression_report(
+            report.get(instance_id, {})
+        ):
+            return instance_id, report
+        if instance is None:
+            raise ValueError("NameRTS evaluation requires the dataset instance")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        logger = setup_logger(instance_id, log_dir / LOG_INSTANCE)
+        try:
+            report = _add_namerts_result(
+                report,
+                test_spec,
+                instance,
+                pred,
+                client,
+                run_id,
+                log_dir,
+                logger,
+                namerts_artifact_root,
+                namerts_workers,
+                namerts_per_file_timeout,
+                namerts_timeout,
+            )
+            report_path.write_text(json.dumps(report, indent=4))
+            return instance_id, report
+        finally:
+            close_logger(logger)
 
     # Set up logger
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -284,6 +324,26 @@ def run_instance(
         container = create_container(test_spec, client, run_id, logger)
         container.start()
         logger.info(f"Container for {instance_id} started: {container.id}")
+
+        if namerts_artifact_root is not None and not is_unsupported_instance(
+            instance_id
+        ):
+            if instance is None:
+                raise ValueError("NameRTS evaluation requires the dataset instance")
+            reset = container.exec_run(
+                ["git", "reset", "--hard", instance["base_commit"]],
+                workdir=CONTAINER_WORKDIR,
+                user=CONTAINER_USER,
+            )
+            if reset.exit_code != 0:
+                report = _make_namerts_pretest_error_report(
+                    instance_id,
+                    pred,
+                    "candidate_base_reset",
+                    "Could not reset the runtime image to the dataset base commit",
+                )
+                report_path.write_text(json.dumps(report, indent=4))
+                return instance_id, report
 
         if not skip_patch:
             # Copy model prediction as patch file to container
@@ -374,11 +434,26 @@ def run_instance(
             logger.info(f"Test output for {instance_id} written to {test_output_path}")
             if timed_out:
                 f.write(f"\n\nTimeout error: {timeout} seconds exceeded.")
-                raise EvaluationError(
+                f.flush()
+                timeout_error = EvaluationError(
                     instance_id,
                     f"Test timed out after {timeout} seconds.",
                     logger,
                 )
+                if namerts_artifact_root is not None:
+                    timeout_report = get_eval_report(
+                        test_spec=test_spec,
+                        prediction=pred,
+                        test_log_path=test_output_path,
+                        include_tests_status=True,
+                    )
+                    timeout_result = timeout_report[instance_id]
+                    timeout_result["namerts_regression"] = terminal_timeout_report(
+                        timeout_error
+                    )
+                    timeout_result["resolved"] = False
+                    report_path.write_text(json.dumps(timeout_report, indent=4))
+                raise timeout_error
 
         # Get git diff after running eval script (ignore permission changes)
         git_diff_output_after = (
@@ -402,6 +477,25 @@ def run_instance(
             test_log_path=test_output_path,
             include_tests_status=True,
         )
+        if namerts_artifact_root is not None:
+            if instance is None:
+                raise ValueError("NameRTS evaluation requires the dataset instance")
+            cleanup_container(client, container, logger)
+            container = None
+            report = _add_namerts_result(
+                report,
+                test_spec,
+                instance,
+                pred,
+                client,
+                run_id,
+                log_dir,
+                logger,
+                namerts_artifact_root,
+                namerts_workers,
+                namerts_per_file_timeout,
+                namerts_timeout,
+            )
         logger.info(
             f"report: {report}\n"
             f"Result for {instance_id}: resolved: {report[instance_id]['resolved']}"
@@ -429,6 +523,59 @@ def run_instance(
     return
 
 
+def _add_namerts_result(
+    report,
+    test_spec,
+    instance,
+    prediction,
+    client,
+    run_id,
+    log_dir,
+    logger,
+    artifact_root,
+    workers,
+    per_file_timeout,
+    timeout,
+):
+    result = report[test_spec.instance_id]
+    if result.get("resolved"):
+        regression = run_regression_evaluation(
+            test_spec=test_spec,
+            instance=instance,
+            prediction=prediction,
+            client=client,
+            container_factory=lambda runtime_spec: create_container(
+                runtime_spec, client, run_id, logger
+            ),
+            artifact_root=artifact_root,
+            log_dir=log_dir,
+            logger=logger,
+            workers=workers,
+            per_file_timeout=per_file_timeout,
+            timeout=timeout,
+        )
+    else:
+        regression = skipped_upstream_report()
+    result["namerts_regression"] = regression
+    result["resolved"] = bool(result.get("resolved") and regression["passed"])
+    return report
+
+
+def _make_namerts_pretest_error_report(instance_id, prediction, stage, error):
+    patch = prediction.get("model_patch")
+    return {
+        instance_id: {
+            "patch_is_None": patch is None,
+            "patch_exists": patch is not None,
+            "patch_successfully_applied": False,
+            "resolved": False,
+            "infra_failure": True,
+            "infra_failure_reason": str(error),
+            "namerts_regression": make_error_report(stage, error),
+        }
+    }
+
+
 def run_instances(
     predictions: dict,
     instances: list,
@@ -438,6 +585,10 @@ def run_instances(
     rewrite_reports: bool = False,
     skip_patch: bool = False,
     task_repo: str | None = None,
+    namerts_artifact_root: str | None = None,
+    namerts_workers: int = 4,
+    namerts_per_file_timeout: int = 120,
+    namerts_timeout: int = 7_200,
 ):
     """
     Run all instances for the given predictions in parallel.
@@ -453,6 +604,7 @@ def run_instances(
     """
     client = _docker_client()
     test_specs = [make_test_spec(instance) for instance in instances]
+    instances_by_id = {instance["instance_id"]: instance for instance in instances}
 
     # run instances in parallel
     payloads = []
@@ -467,6 +619,11 @@ def run_instances(
                 rewrite_reports,
                 skip_patch,
                 task_repo,
+                instances_by_id[test_spec.instance_id],
+                namerts_artifact_root,
+                namerts_workers,
+                namerts_per_file_timeout,
+                namerts_timeout,
             )
         )
 
@@ -548,6 +705,7 @@ def get_dataset_from_preds(
     rewrite_reports: bool,
     exclude_completed: bool = True,
     task_repo: str | None = None,
+    require_namerts_report: bool = False,
 ):
     """
     Return only instances that have predictions and are in the dataset.
@@ -617,7 +775,15 @@ def get_dataset_from_preds(
             / LOG_REPORT
         )
         if report_file.exists():
-            completed_ids.add(instance["instance_id"])
+            if not require_namerts_report:
+                completed_ids.add(instance["instance_id"])
+                continue
+            try:
+                report = json.loads(report_file.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            if reusable_regression_report(report.get(instance["instance_id"], {})):
+                completed_ids.add(instance["instance_id"])
 
     if completed_ids and exclude_completed:
         # filter dataset to only instances that have not been run
@@ -708,6 +874,10 @@ def main(
     rewrite_reports: bool,
     modal: bool,
     task_repo: str | None = None,
+    namerts_artifact_root: str | None = None,
+    namerts_workers: int = 4,
+    namerts_per_file_timeout: int = 120,
+    namerts_timeout: int = 7_200,
 ):
     """
     Run evaluation harness for the given dataset and predictions.
@@ -727,6 +897,10 @@ def main(
             "repo's Dockerfiles would be ignored while its tests were used. Drop "
             "--task-repo to run on Modal, or drop --modal to build the repo."
         )
+    if namerts_artifact_root is not None and rewrite_reports:
+        raise ValueError("NameRTS cannot run with --rewrite_reports")
+    if namerts_artifact_root is not None and modal:
+        raise ValueError("NameRTS regression evaluation supports local Docker only")
 
     # set open file limit
     assert len(run_id) > 0, "Run ID must be provided"
@@ -746,6 +920,7 @@ def main(
         run_id,
         rewrite_reports,
         task_repo=task_repo,
+        require_namerts_report=namerts_artifact_root is not None,
     )
     full_dataset = load_instances(dataset_name, split, instance_ids, task_repo)
 
@@ -782,6 +957,10 @@ def main(
             timeout,
             rewrite_reports=rewrite_reports,
             task_repo=task_repo,
+            namerts_artifact_root=namerts_artifact_root,
+            namerts_workers=namerts_workers,
+            namerts_per_file_timeout=namerts_per_file_timeout,
+            namerts_timeout=namerts_timeout,
         )
 
     # make final report
@@ -846,6 +1025,13 @@ if __name__ == "__main__":
         default=False,
         help="Doesn't run new instances, only writes reports for instances with existing test outputs",
     )
+    parser.add_argument(
+        "--namerts_artifact_root",
+        help="Prepared NameRTS artifacts; omitted to preserve normal evaluation",
+    )
+    parser.add_argument("--namerts_workers", type=int, default=4)
+    parser.add_argument("--namerts_per_file_timeout", type=int, default=120)
+    parser.add_argument("--namerts_timeout", type=int, default=7_200)
     # Modal execution args
     parser.add_argument("--modal", type=str2bool, default=False, help="Run on Modal")
 

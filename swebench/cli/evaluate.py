@@ -42,6 +42,14 @@ def eval_command(
         False, "--modal", help="Run on Modal instead of local Docker"
     ),
     open_file_limit: int = typer.Option(4096, "--open-file-limit"),
+    namerts_artifact_root: Optional[str] = typer.Option(
+        None,
+        "--namerts-artifact-root",
+        help="Prepared NameRTS artifacts; enables regression-test selection",
+    ),
+    namerts_workers: int = typer.Option(4, "--namerts-workers"),
+    namerts_per_file_timeout: int = typer.Option(120, "--namerts-per-file-timeout"),
+    namerts_timeout: int = typer.Option(7200, "--namerts-timeout"),
 ):
     """Evaluate gold or model predictions against a dataset.
 
@@ -74,6 +82,10 @@ def eval_command(
         rewrite_reports=False,
         modal=modal,
         task_repo=task_repo,
+        namerts_artifact_root=namerts_artifact_root,
+        namerts_workers=namerts_workers,
+        namerts_per_file_timeout=namerts_per_file_timeout,
+        namerts_timeout=namerts_timeout,
     )
 
 

@@ -60,6 +60,7 @@ nav:
   - "User Guides":
     - "SWE-bench Quickstart": guides/quickstart.md
     - "Evaluation": guides/evaluation.md
+    - "NameRTS regression testing": guides/namerts.md
     - "Docker Setup": guides/docker_setup.md
     - "Datasets": guides/datasets.md
     - "Create RAG Datasets": guides/create_rag_datasets.md

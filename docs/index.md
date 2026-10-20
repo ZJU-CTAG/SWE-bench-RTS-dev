@@ -72,6 +72,7 @@ pip install -e .
 - **Guides**
   - [Quickstart](guides/quickstart.md) - Get started with SWE-bench
   - [Evaluation](guides/evaluation.md) - How to evaluate models on SWE-bench
+  - [NameRTS regression testing](guides/namerts.md) - Run optional regression-test selection
   - [Docker Setup](guides/docker_setup.md) - Configure Docker for SWE-bench
   - [Datasets](guides/datasets.md) - Available datasets and how to use them
   - [Create RAG Datasets](guides/create_rag_datasets.md) - Build your own retrieval datasets
