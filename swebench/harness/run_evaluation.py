@@ -33,9 +33,7 @@ from swebench.harness.docker_utils import (
 )
 import logging
 from swebench.harness.grading import get_eval_report
-from swebench.harness.namerts.artifacts import make_error_report
 from swebench.harness.namerts.evaluation import (
-    is_unsupported_instance,
     reusable_regression_report,
     run_regression_evaluation,
     skipped_upstream_report,
@@ -247,7 +245,7 @@ def run_instance(
     namerts_artifact_root: str | None = None,
     namerts_workers: int = 4,
     namerts_per_file_timeout: int = 120,
-    namerts_timeout: int = 7_200,
+    namerts_timeout: int | None = None,
 ):
     """
     Run a single instance with the given prediction.
@@ -261,6 +259,9 @@ def run_instance(
         rewrite_reports (bool): True if eval run is just to reformat existing report
         skip_patch (bool): True to skip applying model patch (negative test mode)
     """
+    if namerts_timeout is None:
+        namerts_timeout = timeout
+
     # Set up logging directory
     instance_id = test_spec.instance_id
     model_name_or_path = pred.get("model_name_or_path", "None").replace("/", "__")
@@ -324,26 +325,6 @@ def run_instance(
         container = create_container(test_spec, client, run_id, logger)
         container.start()
         logger.info(f"Container for {instance_id} started: {container.id}")
-
-        if namerts_artifact_root is not None and not is_unsupported_instance(
-            instance_id
-        ):
-            if instance is None:
-                raise ValueError("NameRTS evaluation requires the dataset instance")
-            reset = container.exec_run(
-                ["git", "reset", "--hard", instance["base_commit"]],
-                workdir=CONTAINER_WORKDIR,
-                user=CONTAINER_USER,
-            )
-            if reset.exit_code != 0:
-                report = _make_namerts_pretest_error_report(
-                    instance_id,
-                    pred,
-                    "candidate_base_reset",
-                    "Could not reset the runtime image to the dataset base commit",
-                )
-                report_path.write_text(json.dumps(report, indent=4))
-                return instance_id, report
 
         if not skip_patch:
             # Copy model prediction as patch file to container
@@ -561,21 +542,6 @@ def _add_namerts_result(
     return report
 
 
-def _make_namerts_pretest_error_report(instance_id, prediction, stage, error):
-    patch = prediction.get("model_patch")
-    return {
-        instance_id: {
-            "patch_is_None": patch is None,
-            "patch_exists": patch is not None,
-            "patch_successfully_applied": False,
-            "resolved": False,
-            "infra_failure": True,
-            "infra_failure_reason": str(error),
-            "namerts_regression": make_error_report(stage, error),
-        }
-    }
-
-
 def run_instances(
     predictions: dict,
     instances: list,
@@ -588,7 +554,7 @@ def run_instances(
     namerts_artifact_root: str | None = None,
     namerts_workers: int = 4,
     namerts_per_file_timeout: int = 120,
-    namerts_timeout: int = 7_200,
+    namerts_timeout: int | None = None,
 ):
     """
     Run all instances for the given predictions in parallel.
@@ -877,7 +843,7 @@ def main(
     namerts_artifact_root: str | None = None,
     namerts_workers: int = 4,
     namerts_per_file_timeout: int = 120,
-    namerts_timeout: int = 7_200,
+    namerts_timeout: int | None = None,
 ):
     """
     Run evaluation harness for the given dataset and predictions.
@@ -1029,9 +995,24 @@ if __name__ == "__main__":
         "--namerts_artifact_root",
         help="Prepared NameRTS artifacts; omitted to preserve normal evaluation",
     )
-    parser.add_argument("--namerts_workers", type=int, default=4)
-    parser.add_argument("--namerts_per_file_timeout", type=int, default=120)
-    parser.add_argument("--namerts_timeout", type=int, default=7_200)
+    parser.add_argument(
+        "--namerts_workers",
+        type=int,
+        default=4,
+        help="Legacy option; RTS tests use one official runner invocation.",
+    )
+    parser.add_argument(
+        "--namerts_per_file_timeout",
+        type=int,
+        default=120,
+        help="Legacy option; RTS tests use the whole-command timeout.",
+    )
+    parser.add_argument(
+        "--namerts_timeout",
+        type=int,
+        default=None,
+        help="RTS command timeout in seconds; defaults to --timeout",
+    )
     # Modal execution args
     parser.add_argument("--modal", type=str2bool, default=False, help="Run on Modal")
 

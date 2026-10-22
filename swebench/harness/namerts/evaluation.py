@@ -23,6 +23,7 @@ from swebench.harness.namerts.runtime import (
     run_install_script,
     run_selected_tests,
     run_selection,
+    restore_test_environment,
 )
 from swebench.types import TestSpec
 
@@ -130,6 +131,10 @@ def run_regression_evaluation(
         )
         stage = "run_tests"
         if selection.get("tests_to_run"):
+            stage = "candidate_setup"
+            restore_test_environment(
+                container, artifact, instance["base_commit"], log_dir, timeout
+            )
             stage = "candidate_install"
             run_install_script(
                 container,

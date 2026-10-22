@@ -47,9 +47,21 @@ def eval_command(
         "--namerts-artifact-root",
         help="Prepared NameRTS artifacts; enables regression-test selection",
     ),
-    namerts_workers: int = typer.Option(4, "--namerts-workers"),
-    namerts_per_file_timeout: int = typer.Option(120, "--namerts-per-file-timeout"),
-    namerts_timeout: int = typer.Option(7200, "--namerts-timeout"),
+    namerts_workers: int = typer.Option(
+        4,
+        "--namerts-workers",
+        help="Legacy option; RTS tests use one runner invocation.",
+    ),
+    namerts_per_file_timeout: int = typer.Option(
+        120,
+        "--namerts-per-file-timeout",
+        help="Legacy option; RTS uses the whole-command timeout.",
+    ),
+    namerts_timeout: Optional[int] = typer.Option(
+        None,
+        "--namerts-timeout",
+        help="RTS command timeout in seconds; defaults to --timeout",
+    ),
 ):
     """Evaluate gold or model predictions against a dataset.
 

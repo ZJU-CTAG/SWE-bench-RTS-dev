@@ -28,7 +28,7 @@ from swebench.image_builder.constants import CONTAINER_WORKDIR
 CONTAINER_BRIDGE = PurePosixPath("/opt/namerts/swebench_bridge.py")
 CONTAINER_CACHE = PurePosixPath("/tmp/namerts-parent-cache.tar.gz")
 CONTAINER_SELECTION = PurePosixPath("/tmp/namerts-selection.json")
-CONTAINER_GOLDEN_BASELINE = PurePosixPath("/tmp/namerts-golden-baseline.json")
+CONTAINER_RUNNER_SCRIPT = PurePosixPath("/tmp/namerts-run-tests.sh")
 CONTAINER_TARGET_RESULTS = PurePosixPath("/tmp/namerts-target-results.json")
 CONTAINER_TEST_SCRIPT = PurePosixPath("/tmp/namerts-test-setup.sh")
 CONTAINER_INSTALL_SCRIPT = PurePosixPath("/tmp/namerts-install.sh")
@@ -117,7 +117,7 @@ def _bridge_command(
     return " ".join(shlex.quote(argument) for argument in arguments)
 
 
-def _run_bridge(container, command: str, timeout: int) -> tuple[str, float]:
+def _run_bridge(container, command: str, timeout: int | None) -> tuple[str, float]:
     script = (
         f"{command}\n"
         "status=$?\n"
@@ -285,6 +285,11 @@ def make_harness_test_command_prefix(
     prefix = command[:first_target].rstrip()
     if not prefix:
         raise NameRTSRuntimeError("Official test command has an empty runner prefix")
+    if repo == "sympy/sympy":
+        # Only the RTS golden/selected runners use this derived prefix.
+        # The upstream eval.sh (including its -C option) is never rewritten.
+        prefix = re.sub(r"(?<!\S)(?:-C|--no-cache)(?=\s|$)\s*", "", prefix).rstrip()
+        prefix = "SYMPY_USE_CACHE=yes " + prefix
     return prefix
 
 
@@ -355,6 +360,31 @@ def run_selection(
     return selection
 
 
+def restore_test_environment(
+    container, artifact: NameRTSArtifact, base_commit: str, log_dir: Path, timeout: int
+) -> None:
+    """Reapply official setup changes after candidate-only base-commit analysis."""
+    # Selection intentionally runs at dataset base + candidate. Tests must also
+    # have the setup changes used by the golden baseline (e.g. tox pytest -rA).
+    # Apply the delta, not a checkout: never overwrite candidate edits. A conflict
+    # is an explicit infrastructure failure rather than a different tested patch.
+    setup_patch = "/tmp/namerts-official-setup.patch"
+    command = (
+        f"(set -e\ncd {shlex.quote(CONTAINER_WORKDIR)}\n"
+        f"git diff --binary --no-ext-diff {shlex.quote(base_commit)} "
+        f"{shlex.quote(artifact.repo_head)} -- > {setup_patch}\n"
+        f"if [ -s {setup_patch} ]; then\n"
+        f"git apply --check {setup_patch}\n"
+        f"git apply {setup_patch}\nfi\n)\n"
+    )
+    try:
+        output, _ = _run_bridge(container, command, timeout)
+    except Exception as error:
+        (log_dir / "namerts_official_setup.log").write_text(str(error))
+        raise
+    (log_dir / "namerts_official_setup.log").write_text(output)
+
+
 def apply_test_patch(
     container,
     eval_script: str,
@@ -389,11 +419,6 @@ def run_selected_tests(
     if not selection_path.is_file():
         raise NameRTSRuntimeError("Missing filtered NameRTS selection")
     copy_to_container(container, selection_path, CONTAINER_SELECTION)
-    copy_to_container(
-        container,
-        artifact.directory / artifact.manifest["files"]["golden_baseline"]["name"],
-        CONTAINER_GOLDEN_BASELINE,
-    )
     command_path = log_dir / "namerts_test_command.txt"
     command_path.write_text(test_command + "\n")
     copy_to_container(container, command_path, CONTAINER_TEST_COMMAND)
@@ -405,8 +430,8 @@ def run_selected_tests(
         extra_args=[
             "--selection",
             str(CONTAINER_SELECTION),
-            "--baseline",
-            str(CONTAINER_GOLDEN_BASELINE),
+            "--runner-script",
+            str(CONTAINER_RUNNER_SCRIPT),
             "--test-command",
             str(CONTAINER_TEST_COMMAND),
             "--output",
@@ -427,7 +452,33 @@ def run_selected_tests(
         raise NameRTSRuntimeError(
             f"NameRTS selected tests did not produce valid output: {error}"
         ) from error
-    if payload.get("completed") is not True:
-        raise NameRTSRuntimeError("NameRTS selected tests were not completed")
-    payload["wall_time_seconds"] = runtime
+    payload = run_grouped_tests(container, payload, log_dir, timeout)
+    payload["wall_time_seconds"] = runtime + payload["duration"]
+    result_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
     return payload
+
+
+def run_grouped_tests(container, payload: dict, log_dir: Path, timeout: int) -> dict:
+    """Use the upstream Docker executor for one complete regression invocation."""
+    copy_from_container(
+        container, CONTAINER_RUNNER_SCRIPT, log_dir / "namerts_run_tests.sh"
+    )
+    output, timed_out, duration = exec_run_with_timeout(
+        container, f"/bin/bash {CONTAINER_RUNNER_SCRIPT}", timeout
+    )
+    (log_dir / "namerts_test.log").write_text(output)
+    match = re.search(r"\n__NAMERTS_TEST_EXIT_CODE__=(\d+)\s*$", output)
+    if timed_out:
+        raise NameRTSRuntimeError(f"NameRTS tests timed out after {timeout} seconds")
+    if match is None:
+        raise NameRTSRuntimeError("NameRTS test runner produced no exit status")
+    return {
+        **payload,
+        "completed": True,
+        "duration": duration,
+        "timeout_seconds": timeout,
+        "return_code": int(match.group(1)),
+        "stdout": output[: match.start()],
+        "stderr": "",
+        "timed_out": False,
+    }

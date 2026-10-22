@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import shlex
 import shutil
 import subprocess
@@ -22,7 +21,6 @@ import swebench
 from swebench.harness.docker_utils import (
     cleanup_container,
     copy_to_container,
-    exec_run_with_timeout,
 )
 from swebench.harness.namerts.artifacts import (
     ARTIFACT_SCHEMA_VERSION,
@@ -37,11 +35,14 @@ from swebench.harness.namerts.artifacts import (
 )
 from swebench.harness.namerts.runtime import (
     copy_from_container,
+    _run_bridge,
+    run_grouped_tests,
     make_harness_test_command_prefix,
     make_install_script,
     make_test_script,
 )
 from swebench.harness.utils import load_swebench_dataset, make_test_spec, str2bool
+from swebench.harness.namerts.policy import read_policy, record_slow_tests
 from swebench.image_builder.constants import CONTAINER_USER, CONTAINER_WORKDIR
 from swebench.logger import close_logger, setup_logger
 
@@ -62,7 +63,6 @@ CONDA_CHANNEL_MIRRORS = {
 }
 PIP_INDEX_URL = "https://pypi.tuna.tsinghua.edu.cn/simple"
 DEFAULT_NAMERTS_SOURCE = Path(__file__).resolve().parents[3] / "NameRTS"
-_EXIT_MARKER = "__NAMERTS_EXIT_CODE__="
 
 
 def _decode_exec(result, description: str) -> str:
@@ -88,7 +88,8 @@ def _source_files(source_root: Path, environment_file: str) -> list[Path]:
 
 
 def _runtime_fingerprint(
-    source_root: Path, environment_file: str, official_image_id: str
+    source_root: Path, environment_file: str, official_image_id: str,
+    instance_id: str = "",
 ) -> tuple[str, str]:
     source_sha256 = sha256_tree(
         source_root, _source_files(source_root, environment_file)
@@ -100,6 +101,8 @@ def _runtime_fingerprint(
         source_sha256,
         bridge_sha256,
         official_image_id,
+        json.dumps({k: v for k, v in read_policy(instance_id).items()
+                    if k != "slow_test_files"}, sort_keys=True),
     ):
         digest.update(value.encode())
         digest.update(b"\0")
@@ -252,6 +255,24 @@ def _inspect_official_image(client, image: str, instance_id: str, logger):
         cleanup_container(client, container, logger)
 
 
+def _instrumentation_testbed_install(instance_id: str, namerts_env: str) -> str:
+    """Install static project/instance test dependency policy in RTS images."""
+    policy = read_policy(instance_id)
+    dependencies = policy.get("test_dependencies", [])
+    if dependencies:
+        return ("RUN /opt/miniconda3/envs/testbed/bin/python -m pip install "
+                + " ".join(dependencies) + "\n")
+    if not instance_id.startswith("sympy__sympy-"):
+        return ""
+    version = "6.2.5" if namerts_env == "NameRTS36" else "7.4.4"
+    version = policy.get("pytest_version", version)
+    extra = " py==" + policy["py_version"] if "py_version" in policy else ""
+    return (
+        "RUN /opt/miniconda3/envs/testbed/bin/python -m pip install "
+        f"pytest=={version}{extra}\n"
+    )
+
+
 def _build_runtime_image(
     client,
     *,
@@ -294,6 +315,7 @@ ENV PIP_DEFAULT_TIMEOUT=300
 RUN /bin/bash -lc "source /opt/miniconda3/etc/profile.d/conda.sh && conda env create --file /opt/namerts-environment.yml"
 COPY namerts /opt/namerts
 RUN /opt/miniconda3/envs/testbed/bin/python -m pip install --no-deps /opt/namerts/src/instrumentor
+{_instrumentation_testbed_install(instance_id, namerts_env)}\
 RUN test "$(/opt/miniconda3/envs/{namerts_env}/bin/python -S -c 'import sys; print(str(sys.version_info[0]) + \".\" + str(sys.version_info[1]))')" = "$(/opt/miniconda3/envs/testbed/bin/python -S -c 'import sys; print(str(sys.version_info[0]) + \".\" + str(sys.version_info[1]))')"
 WORKDIR /testbed
 """
@@ -328,29 +350,6 @@ WORKDIR /testbed
         shutil.rmtree(build_directory, ignore_errors=True)
 
 
-def _run_checked_container(container, command: str, timeout: int):
-    script = (
-        f"{command}\n"
-        "status=$?\n"
-        f"printf '\\n{_EXIT_MARKER}%s\\n' \"$status\"\n"
-        'exit "$status"'
-    )
-    output, timed_out, runtime = exec_run_with_timeout(
-        container, "/bin/bash -lc " + shlex.quote(script), timeout
-    )
-    if timed_out:
-        raise RuntimeError(f"NameRTS preparation timed out after {timeout} seconds")
-    match = re.search(rf"\n{_EXIT_MARKER}(\d+)\s*$", output)
-    if match is None:
-        raise RuntimeError("NameRTS preparation produced no exit status")
-    if int(match.group(1)) != 0:
-        raise RuntimeError(
-            f"NameRTS preparation exited with code {match.group(1)}:\n"
-            f"{output[: match.start()][-4000:]}"
-        )
-    return output[: match.start()], runtime
-
-
 def _run_preparation(
     client,
     *,
@@ -368,12 +367,16 @@ def _run_preparation(
     workers: int,
     per_file_timeout: int,
     total_timeout: int,
+    slow_test_threshold: float,
 ) -> float:
     container = None
     try:
         container = _create_container(
             client, runtime_image, instance_id, "prepare", logger
         )
+        policy_path = staging / "instance_policy.json"
+        policy_path.write_text(json.dumps(read_policy(instance_id)))
+        copy_to_container(container, policy_path, PurePosixPath("/tmp/namerts-policy.json"))
         copy_to_container(container, golden_patch, PurePosixPath("/tmp/golden.patch"))
         copy_to_container(container, install_script, PurePosixPath("/tmp/install.sh"))
         copy_to_container(container, test_script, PurePosixPath("/tmp/test-setup.sh"))
@@ -389,6 +392,8 @@ def _run_preparation(
             "python",
             "/opt/namerts/swebench_bridge.py",
             "prepare",
+            "--instance-policy",
+            "/tmp/namerts-policy.json",
             "--repo-root",
             CONTAINER_WORKDIR,
             "--project-name",
@@ -399,6 +404,10 @@ def _run_preparation(
             str(workers),
             "--per-file-timeout",
             str(per_file_timeout),
+            "--slow-test-threshold",
+            str(slow_test_threshold),
+            "--runner-script",
+            "/tmp/namerts-run-tests.sh",
             "--golden-patch",
             "/tmp/golden.patch",
             "--install-script",
@@ -413,7 +422,7 @@ def _run_preparation(
             "/tmp/golden_baseline.json",
         ]
         command = " ".join(shlex.quote(argument) for argument in arguments)
-        output, runtime = _run_checked_container(container, command, total_timeout)
+        output, runtime = _run_bridge(container, command, None)
         (staging / "preparation.log").write_text(output)
         logger.info("NameRTS preparation runtime: %.2f seconds", runtime)
         copy_from_container(
@@ -426,7 +435,18 @@ def _run_preparation(
             PurePosixPath("/tmp/golden_baseline.json"),
             staging / GOLDEN_BASELINE_FILENAME,
         )
-        return runtime
+        baseline_path = staging / GOLDEN_BASELINE_FILENAME
+        prepared = json.loads(baseline_path.read_text())
+        record_slow_tests(instance_id, prepared["slow_test_files"])
+        if any(t["return_code"] in (2, 3, 4, 127) and not t["timed_out"]
+               for t in prepared["instrumentation_results"]):
+            raise RuntimeError("Instrumentation collection/runner error; see baseline timings")
+        baseline = run_grouped_tests(
+            container, json.loads(baseline_path.read_text()), staging, total_timeout
+        )
+        baseline["timing"]["golden_test_seconds"] = baseline["duration"]
+        baseline_path.write_text(json.dumps(baseline, indent=2, sort_keys=True))
+        return runtime + baseline["duration"]
     finally:
         cleanup_container(client, container, logger)
 
@@ -439,10 +459,15 @@ def prepare_instance(
     *,
     workers: int = 4,
     per_file_timeout: int = 120,
-    total_timeout: int = 86_400,
+    total_timeout: int = 1800,
+    slow_test_threshold: float = 180,
     force_rebuild: bool = False,
     image_pull_timeout: int = 900,
 ) -> Path:
+    if total_timeout <= 0:
+        raise ValueError("Golden runner timeout must be positive")
+    if not 0 < slow_test_threshold < float("inf"):
+        raise ValueError("Slow-test threshold must be positive and finite")
     artifact_root = Path(artifact_root).expanduser().resolve()
     source_root = Path(namerts_source).expanduser().resolve()
     if not (source_root / "src" / "namebdp.py").is_file():
@@ -483,7 +508,7 @@ def prepare_instance(
         if not (source_root / environment_file).is_file():
             raise FileNotFoundError(source_root / environment_file)
         source_sha256, fingerprint = _runtime_fingerprint(
-            source_root, environment_file, official_image.id
+            source_root, environment_file, official_image.id, test_spec.instance_id
         )
         arch = official_image.attrs.get("Architecture", "amd64")
         runtime_image = _runtime_image_name(test_spec.instance_id, arch, fingerprint)
@@ -542,6 +567,7 @@ def prepare_instance(
             workers=workers,
             per_file_timeout=per_file_timeout,
             total_timeout=total_timeout,
+            slow_test_threshold=slow_test_threshold,
         )
         baseline_path = staging / GOLDEN_BASELINE_FILENAME
         baseline = json.loads(baseline_path.read_text())
@@ -585,27 +611,24 @@ def prepare_instance(
                 "recipe_version": RUNTIME_RECIPE_VERSION,
             },
             "preparation": {
-                "workers": workers,
-                "per_file_timeout": per_file_timeout,
+                "instrumentation_workers": 1,
+                "slow_test_threshold_seconds": slow_test_threshold,
                 "total_timeout": total_timeout,
                 "golden_patch_sha256": sha256_file(golden_patch),
                 "test_patch_sha256": sha256_file(test_patch),
-                "discovered_test_files": baseline["test_count"],
+                "discovered_test_files": len(baseline["discovered_tests"]),
+                "golden_test_files": baseline["test_count"],
                 "golden_failure_count": len(baseline["failure_ids"]),
-                "golden_collection_failure_count": len(
-                    baseline["collection_failed_files"]
-                ),
-                "golden_timeout_count": baseline["timed_out_processes"],
-                "test_execution": "per_file",
-                "test_process_isolation": baseline["test_process_isolation"],
+                "test_execution": "grouped",
+                "slow_test_files": baseline["slow_test_files"],
                 "harness_test_command_sha256": sha256_text(harness_test_command),
                 "timing": {
+                    **baseline.get("timing", {}),
                     "official_image_seconds": official_image_seconds,
                     "runtime_image_build_seconds": image_build_seconds,
                     "runtime_image_reused": runtime_image_reused,
                     "container_preparation_seconds": container_preparation_seconds,
                     "total_seconds": time.monotonic() - preparation_started,
-                    **baseline.get("timing", {}),
                 },
             },
             "files": {
@@ -668,6 +691,7 @@ def main(
     total_timeout: int,
     force_rebuild: bool,
     image_pull_timeout: int,
+    slow_test_threshold: float,
 ) -> None:
     instances = load_swebench_dataset(
         _resolve_dataset_path(dataset_name, split), split, instance_ids
@@ -701,9 +725,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--instance_ids", nargs="+", required=True)
     parser.add_argument("--artifact_root", default="namerts_artifacts")
     parser.add_argument("--namerts_source", default=str(DEFAULT_NAMERTS_SOURCE))
-    parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--per_file_timeout", type=int, default=120)
-    parser.add_argument("--total_timeout", type=int, default=86_400)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Legacy option; instrumentation is serial.",
+    )
+    parser.add_argument(
+        "--per_file_timeout",
+        type=int,
+        default=120,
+        help="Legacy option; no per-file deadline is imposed.",
+    )
+    parser.add_argument(
+        "--total_timeout",
+        "--timeout",
+        type=int,
+        default=1800,
+        help="Whole golden regression runner timeout (not instrumentation).",
+    )
+    parser.add_argument("--slow_test_threshold", type=float, default=180)
     parser.add_argument("--force_rebuild", type=str2bool, default=False)
     parser.add_argument("--image_pull_timeout", type=int, default=900)
     return parser.parse_args()

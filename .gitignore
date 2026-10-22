@@ -171,6 +171,7 @@ data/repos/copies
 notebooks/
 *logs/
 namerts_artifacts/
+swebench/harness/namerts/instance_policy.lock
 
 # run_evaluation writes these summaries into cwd
 gold.*.json

@@ -11,10 +11,11 @@ from typing import Any
 from swebench.harness.constants import TestStatus
 from swebench.harness.log_parsers import PARSER_REGISTRY
 from swebench.types import TestSpec
+from swebench.harness.namerts.policy import read_policy
 
 
-ARTIFACT_SCHEMA_VERSION = 5
-RUNTIME_RECIPE_VERSION = "11"
+ARTIFACT_SCHEMA_VERSION = 8
+RUNTIME_RECIPE_VERSION = "19"
 MANIFEST_FILENAME = "manifest.json"
 PARENT_CACHE_FILENAME = "parent_cache.tar.gz"
 GOLDEN_BASELINE_FILENAME = "golden_baseline.json"
@@ -203,14 +204,8 @@ def load_artifact(
             "NameRTS artifact patch provenance does not match "
             f"{test_spec.instance_id}: {patch_mismatches}"
         )
-    if actual_hashes.get("test_execution") != "per_file":
-        raise NameRTSArtifactError(
-            "NameRTS artifact does not use per-file test execution"
-        )
-    if actual_hashes.get("test_process_isolation") != "per_file_temp_root":
-        raise NameRTSArtifactError(
-            "NameRTS artifact does not isolate per-file temporary roots"
-        )
+    if actual_hashes.get("test_execution") != "grouped":
+        raise NameRTSArtifactError("NameRTS artifact does not use grouped execution")
     test_command_sha256 = actual_hashes.get("harness_test_command_sha256")
     if not isinstance(test_command_sha256, str) or len(test_command_sha256) != 64:
         raise NameRTSArtifactError(
@@ -223,187 +218,127 @@ def load_artifact(
         raise NameRTSArtifactError(f"Cannot read golden baseline: {error}") from error
     if baseline.get("completed") is not True:
         raise NameRTSArtifactError("Golden full-suite baseline is incomplete")
-    if baseline.get("execution_mode") != "per_file":
-        raise NameRTSArtifactError(
-            "Golden full-suite baseline was not run per test file"
-        )
-    if baseline.get("test_process_isolation") != "per_file_temp_root":
-        raise NameRTSArtifactError(
-            "Golden full-suite baseline does not isolate per-file temporary roots"
-        )
-    if not isinstance(baseline.get("failure_ids"), list):
-        raise NameRTSArtifactError("Golden baseline has no failure_ids")
-    results = baseline.get("results")
-    if not isinstance(results, list):
-        raise NameRTSArtifactError("Golden baseline has no per-file results")
-    tests = baseline.get("tests")
-    if not isinstance(tests, list) or len(tests) != len(set(tests)):
-        raise NameRTSArtifactError("Golden baseline has invalid test files")
-    result_files = [item.get("test_file") for item in results if isinstance(item, dict)]
-    if len(result_files) != len(results) or sorted(result_files) != sorted(tests):
-        raise NameRTSArtifactError(
-            "Golden baseline per-file results do not match discovered tests"
-        )
-    collection_failed_files = baseline.get("collection_failed_files")
+    if baseline.get("execution_mode") != "grouped":
+        raise NameRTSArtifactError("Golden baseline does not use grouped execution")
+    if test_spec.repo == "sympy/sympy" and baseline.get("calculation_cache") != "yes":
+        raise NameRTSArtifactError("SymPy RTS baseline must enable calculation caching")
+    normalized = normalize_test_results(test_spec, baseline)
+    if baseline.get("failure_ids") != normalized["failure_ids"]:
+        raise NameRTSArtifactError("Golden baseline failures do not match its output")
+    timings = baseline.get("instrumentation_results")
+    threshold = baseline.get("slow_test_threshold_seconds")
+    if not isinstance(timings, list):
+        raise NameRTSArtifactError("Missing instrumentation timings")
+    if not isinstance(threshold, (int, float)) or not 0 < threshold < float("inf"):
+        raise NameRTSArtifactError("Invalid slow-test threshold")
+    seen = set()
+    for item in timings:
+        name = item.get("test_file")
+        duration = item.get("duration")
+        if (
+            not isinstance(name, str)
+            or name in seen
+            or not isinstance(duration, (int, float))
+            or not 0 <= duration < float("inf")
+            or not isinstance(item.get("timed_out"), bool)
+        ):
+            raise NameRTSArtifactError("Incomplete or invalid instrumentation timings")
+        seen.add(name)
+    persisted = baseline.get("persisted_slow_test_files")
+    if not isinstance(persisted, list) or any(not isinstance(f, str) for f in persisted):
+        raise NameRTSArtifactError("Missing persisted slow-file policy")
+    parent_tests = baseline.get("instrumentation_discovered_tests")
+    skipped = baseline.get("skip_test_files", {})
+    if not isinstance(skipped, dict):
+        raise NameRTSArtifactError("Invalid skip test policy")
+    if not isinstance(parent_tests, list) or not parent_tests or seen != set(parent_tests) - set(persisted) - set(skipped):
+        raise NameRTSArtifactError("Incomplete instrumentation scope")
+    slow = sorted(set(persisted) | {
+        item["test_file"] for item in timings
+        if item["timed_out"] or item["duration"] >= threshold
+    })
+    if baseline.get("slow_test_files") != slow:
+        raise NameRTSArtifactError("Slow-file summary disagrees with instrumentation")
+    current_policy = read_policy(test_spec.instance_id)
+    saved_policy = baseline.get("instance_policy", {})
+    if skipped != current_policy["skip_test_files"] or skipped != saved_policy.get("skip_test_files", {}):
+        raise NameRTSArtifactError("Skip test policy changed; prepare a new artifact")
+    if (not set(current_policy["slow_test_files"]).issubset(slow)
+        or any(current_policy.get(k) != saved_policy.get(k)
+               for k in ("pytest_version", "py_version", "test_dependencies"))):
+        raise NameRTSArtifactError("Instance policy changed; prepare a new artifact")
     if (
-        not isinstance(collection_failed_files, list)
-        or len(collection_failed_files) != len(set(collection_failed_files))
-        or not set(collection_failed_files).issubset(tests)
+        actual_hashes.get("slow_test_files") != slow
+        or actual_hashes.get("slow_test_threshold_seconds") != threshold
     ):
-        raise NameRTSArtifactError(
-            "Golden baseline has invalid collection-failed test files"
-        )
-    recorded_collection_failures = {
-        result["test_file"]
-        for result in results
-        if bool(result.get("collection_failed", False))
-    }
-    if set(collection_failed_files) != recorded_collection_failures:
-        raise NameRTSArtifactError(
-            "Golden baseline collection-failed summary does not match results"
-        )
-    for result in results:
-        target_timeout = result.get("target_timeout_seconds")
-        if not isinstance(target_timeout, int) or target_timeout <= 0:
-            raise NameRTSArtifactError(
-                "Golden baseline has no valid adaptive target timeout for "
-                f"{result.get('test_file')}"
-            )
+        raise NameRTSArtifactError("Slow-file policy disagrees with manifest")
+    discovered = baseline.get("discovered_tests")
+    if (
+        not isinstance(discovered, list)
+        or sorted(set(discovered) - set(slow) - set(skipped)) != baseline["tests"]
+    ):
+        raise NameRTSArtifactError("Golden scope does not match the slow-file policy")
     return NameRTSArtifact(directory, manifest, baseline)
 
 
 def normalize_test_results(test_spec: TestSpec, payload: dict) -> dict[str, Any]:
-    """Normalize test output into stable, comparable failure identities."""
-    if payload.get("execution_mode") != "per_file":
-        raise NameRTSArtifactError(
-            "NameRTS test payload was not produced by per-file execution"
-        )
-    results = payload.get("results")
-    if not isinstance(results, list):
-        raise NameRTSArtifactError("NameRTS per-file test payload has no results")
+    """Compare official parser case IDs, never scope-dependent group exit IDs."""
+    from swebench.harness.namerts.container_bridge import is_collection_failure
+
     tests = payload.get("tests")
-    if not isinstance(tests, list) or len(tests) != len(set(tests)):
-        raise NameRTSArtifactError("NameRTS per-file test payload has invalid tests")
-    parser = PARSER_REGISTRY[test_spec.log_parser]
-    failed_statuses = {TestStatus.FAILED.value, TestStatus.ERROR.value}
-    failures = {}
-    seen_files = set()
-    for result in results:
-        if not isinstance(result, dict) or not isinstance(result.get("test_file"), str):
-            raise NameRTSArtifactError("Invalid NameRTS per-file test result")
-        test_file = result["test_file"]
-        if test_file in seen_files:
-            raise NameRTSArtifactError(f"Duplicate NameRTS test result: {test_file}")
-        seen_files.add(test_file)
-        return_code = result.get("return_code")
-        timed_out = bool(result.get("timed_out", False))
-        collection_failed = bool(result.get("collection_failed", False))
-        output = "\n".join(
-            (str(result.get("stdout", "")), str(result.get("stderr", "")))
+    if (
+        payload.get("execution_mode") != "grouped"
+        or payload.get("completed") is not True
+        or not isinstance(tests, list)
+        or tests != sorted(set(tests))
+        or len(tests) != payload.get("test_count")
+        or payload.get("timed_out")
+    ):
+        raise NameRTSArtifactError("Incomplete or invalid grouped test result")
+    output = str(payload.get("stdout", "")) + "\n" + str(payload.get("stderr", ""))
+    if payload.get("return_code") not in (0, 1):
+        raise NameRTSArtifactError("Grouped runner did not exit normally")
+    if is_collection_failure(payload):
+        raise NameRTSArtifactError(
+            "Grouped collection failed; baseline comparison is unsafe"
         )
-        if collection_failed:
-            identity = f"collect::{test_file}"
-            failures[identity] = {
-                "id": identity,
-                "kind": "collection",
-                "test_file": test_file,
-                "return_code": return_code,
-                "timed_out": False,
-            }
-            continue
-        if timed_out:
-            identity = f"timeout::{test_file}"
-            failures[identity] = {
-                "id": identity,
-                "kind": "timeout",
-                "test_file": test_file,
-                "return_code": return_code,
-                "timed_out": True,
-            }
-            continue
-        try:
-            status_map = parser(output, test_spec)
-        except Exception:
-            status_map = {}
-        parsed = {
-            normalize_parsed_test_id(str(case)): str(status)
-            for case, status in status_map.items()
-            if status in failed_statuses
+    statuses = PARSER_REGISTRY[test_spec.log_parser](output, test_spec)
+    failed = {TestStatus.FAILED.value, TestStatus.ERROR.value}
+    failures = {
+        "case::" + normalize_parsed_test_id(str(case)): {
+            "id": "case::" + normalize_parsed_test_id(str(case)),
+            "kind": "test_case",
+            "test_case": str(case),
+            "status": status,
         }
-        for case, status in sorted(parsed.items()):
-            identity = f"case::{test_file}::{case}"
-            failures[identity] = {
-                "id": identity,
-                "kind": "test_case",
-                "test_file": test_file,
-                "test_case": case,
-                "status": status,
-                "return_code": return_code,
-                "timed_out": False,
-            }
-        if return_code != 0 and not parsed:
-            identity = f"file::{test_file}"
-            failures[identity] = {
-                "id": identity,
-                "kind": "unparsed_nonzero",
-                "test_file": test_file,
-                "return_code": return_code,
-                "timed_out": False,
-            }
-    if seen_files != set(tests) or len(results) != int(payload.get("test_count", -1)):
-        raise NameRTSArtifactError(
-            "NameRTS per-file results do not match the requested test files"
-        )
-    summarized_collection_failures = payload.get("collection_failed_files")
-    if not isinstance(summarized_collection_failures, list) or set(
-        summarized_collection_failures
-    ) != {
-        item["test_file"]
-        for item in results
-        if bool(item.get("collection_failed", False))
-    }:
-        raise NameRTSArtifactError(
-            "NameRTS collection-failed summary does not match per-file results"
-        )
+        for case, status in statuses.items()
+        if status in failed
+    }
+    if (payload.get("return_code") != 0 and not failures) or (tests and not statuses):
+        raise NameRTSArtifactError("Runner output has no comparable test results")
     return {
         "failure_ids": sorted(failures),
         "failures": [failures[key] for key in sorted(failures)],
-        "execution_mode": "per_file",
-        "requested_test_count": int(payload.get("test_count", 0)),
-        "process_count": len(results),
-        "nonzero_processes": sum(item.get("return_code") != 0 for item in results),
-        "timed_out_processes": sum(
-            bool(item.get("timed_out", False)) for item in results
-        ),
-        "collection_failed_processes": sum(
-            bool(item.get("collection_failed", False)) for item in results
-        ),
+        "execution_mode": "grouped",
+        "requested_test_count": len(tests),
+        "process_count": int(bool(tests)),
+        "nonzero_processes": int(payload.get("return_code") != 0),
     }
 
 
 def filter_selection_for_baseline(selection: dict, baseline: dict) -> dict[str, Any]:
-    """Exclude files whose golden result is incomplete and not comparable."""
+    """Filter only the additional RTS regression scope, never upstream tests."""
     requested = sorted(set(selection.get("tests_to_run", [])))
-    collection_excluded = sorted(
-        set(requested) & set(baseline.get("collection_failed_files", []))
-    )
-    timed_out_files = {
-        item.get("test_file")
-        for item in baseline.get("results", [])
-        if isinstance(item, dict) and bool(item.get("timed_out", False))
+    excluded = sorted(set(requested) & set(baseline["slow_test_files"]))
+    skipped = sorted(set(requested) & set(baseline.get("skip_test_files", {})))
+    return {
+        **selection,
+        "tests_to_run": sorted(set(requested) - set(excluded) - set(skipped)),
+        "compatibility_excluded_tests": skipped,
+        "tests_to_run_before_slow_filter": requested,
+        "slow_excluded_tests": excluded,
+        "slow_excluded_count": len(excluded),
     }
-    timeout_excluded = sorted(set(requested) & timed_out_files)
-    excluded = sorted(set(collection_excluded) | set(timeout_excluded))
-    filtered = dict(selection)
-    filtered["tests_to_run"] = sorted(set(requested) - set(excluded))
-    filtered["tests_to_run_before_golden_filter"] = requested
-    filtered["golden_collection_excluded_tests"] = collection_excluded
-    filtered["golden_collection_excluded_count"] = len(collection_excluded)
-    filtered["golden_timeout_excluded_tests"] = timeout_excluded
-    filtered["golden_timeout_excluded_count"] = len(timeout_excluded)
-    filtered["golden_incomplete_excluded_tests"] = excluded
-    filtered["golden_incomplete_excluded_count"] = len(excluded)
-    return filtered
 
 
 def make_regression_report(
@@ -431,32 +366,16 @@ def make_regression_report(
         "new_failure_count": len(new_ids),
         "new_failures": [failures[key] for key in new_ids],
         "target_summary": {
-            "execution_mode": normalized["execution_mode"],
-            "test_process_isolation": target_results.get("test_process_isolation"),
-            "requested_test_count": normalized["requested_test_count"],
-            "process_count": normalized["process_count"],
-            "nonzero_processes": normalized["nonzero_processes"],
-            "timed_out_processes": normalized["timed_out_processes"],
-            "collection_failed_processes": normalized["collection_failed_processes"],
+            key: normalized[key]
+            for key in (
+                "execution_mode",
+                "requested_test_count",
+                "process_count",
+                "nonzero_processes",
+            )
         },
-        "golden_collection_excluded_tests": sorted(
-            selection.get("golden_collection_excluded_tests", [])
-        ),
-        "golden_collection_excluded_count": int(
-            selection.get("golden_collection_excluded_count", 0)
-        ),
-        "golden_timeout_excluded_tests": sorted(
-            selection.get("golden_timeout_excluded_tests", [])
-        ),
-        "golden_timeout_excluded_count": int(
-            selection.get("golden_timeout_excluded_count", 0)
-        ),
-        "golden_incomplete_excluded_tests": sorted(
-            selection.get("golden_incomplete_excluded_tests", [])
-        ),
-        "golden_incomplete_excluded_count": int(
-            selection.get("golden_incomplete_excluded_count", 0)
-        ),
+        "slow_excluded_tests": selection.get("slow_excluded_tests", []),
+        "slow_excluded_count": selection.get("slow_excluded_count", 0),
         "timing": {
             "select_time": selection.get("select_time"),
             "selection_wall_time_seconds": selection.get("wall_time_seconds"),

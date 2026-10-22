@@ -3,6 +3,7 @@ import importlib.util
 import json
 import logging
 import os
+import subprocess
 import sys
 import types
 
@@ -28,9 +29,7 @@ from swebench.harness.namerts.artifacts import (
     sha256_text,
 )
 from swebench.harness.namerts.container_bridge import (
-    deterministic_test_command,
     is_collection_failure,
-    target_timeout_for_golden,
 )
 from swebench.harness.namerts.evaluation import (
     UNSUPPORTED_INSTANCE_IDS,
@@ -44,12 +43,14 @@ from swebench.harness.namerts.prepare import (
     _remove_superseded_runtime_images,
     _runtime_image_name,
 )
+from swebench.harness.namerts.policy import read_policy
 from swebench.harness.namerts.runtime import (
     NameRTSRuntimeError,
     install_runtime_bridge,
     make_harness_test_command_prefix,
     make_install_script,
     make_test_script,
+    restore_test_environment,
 )
 from swebench.types import TestSpec as HarnessTestSpec
 
@@ -89,8 +90,24 @@ def write_artifact(root: Path, spec: HarnessTestSpec, instance: dict) -> Path:
         json.dumps(
             {
                 "completed": True,
-                "execution_mode": "per_file",
-                "test_process_isolation": "per_file_temp_root",
+                "instance_policy": read_policy(spec.instance_id),
+                "execution_mode": "grouped",
+                "return_code": 0,
+                "stdout": "",
+                "timed_out": False,
+                "slow_test_files": ["testing/test_slow.py"],
+                "persisted_slow_test_files": [],
+                "instrumentation_discovered_tests": ["testing/test_slow.py"],
+                "slow_test_threshold_seconds": 300,
+                "discovered_tests": ["testing/test_slow.py"],
+                "instrumentation_results": [
+                    {
+                        "test_file": "testing/test_slow.py",
+                        "duration": 301,
+                        "return_code": 0,
+                        "timed_out": False,
+                    }
+                ],
                 "tests": [],
                 "test_count": 0,
                 "results": [],
@@ -128,8 +145,9 @@ def write_artifact(root: Path, spec: HarnessTestSpec, instance: dict) -> Path:
         "preparation": {
             "golden_patch_sha256": sha256_text(instance["patch"]),
             "test_patch_sha256": sha256_text(instance["test_patch"]),
-            "test_execution": "per_file",
-            "test_process_isolation": "per_file_temp_root",
+            "test_execution": "grouped",
+            "slow_test_threshold_seconds": 300,
+            "slow_test_files": ["testing/test_slow.py"],
             "harness_test_command_sha256": "0" * 64,
         },
         "files": {
@@ -207,8 +225,8 @@ pytest tests/test_feature.py
             "PYTHONWARNINGS='ignore::UserWarning,ignore::SyntaxWarning' "
             "bin/test -C --verbose sympy/core/tests/test_evalf.py",
             "sympy/core/tests/test_evalf.py",
-            "PYTHONWARNINGS='ignore::UserWarning,ignore::SyntaxWarning' "
-            "bin/test -C --verbose",
+            "SYMPY_USE_CACHE=yes PYTHONWARNINGS='ignore::UserWarning,ignore::SyntaxWarning' "
+            "bin/test --verbose",
         ),
     ],
 )
@@ -231,6 +249,7 @@ SWEBENCH_TEST_EXIT_CODE=$?
 """
 
     assert make_harness_test_command_prefix(eval_script, test_patch, repo) == expected
+    assert command in eval_script  # The upstream F2P/P2P script stays unchanged.
 
 
 def test_make_harness_test_command_prefix_rejects_extra_command_after_target():
@@ -296,272 +315,330 @@ def test_load_artifact_rejects_changed_official_image(tmp_path):
         load_artifact(tmp_path, spec, instance)
 
 
-def test_normalize_per_file_results_use_file_scoped_case_identity():
-    payload = {
+def grouped_payload(output="", return_code=0, tests=None):
+    tests = sorted(tests if tests is not None else ["testing/test_a.py"])
+    return {
         "completed": True,
-        "execution_mode": "per_file",
-        "scope": "selected",
-        "tests": ["testing/test_a.py", "testing/test_b.py"],
-        "test_count": 2,
-        "collection_failed_files": [],
-        "results": [
-            {
-                "test_file": "testing/test_a.py",
-                "return_code": 1,
-                "timed_out": False,
-                "collection_failed": False,
-                "stdout": "FAILED testing/test_a.py::test_bad\n",
-                "stderr": "",
-            },
-            {
-                "test_file": "testing/test_b.py",
-                "return_code": 0,
-                "timed_out": False,
-                "collection_failed": False,
-                "stdout": "1 passed\n",
-                "stderr": "",
-            },
-        ],
+        "execution_mode": "grouped",
+        "tests": tests,
+        "test_count": len(tests),
+        "return_code": return_code,
+        "stdout": output,
+        "stderr": "",
+        "timed_out": False,
     }
 
-    result = normalize_test_results(make_spec(), payload)
 
-    assert result["failure_ids"] == [
-        "case::testing/test_a.py::testing/test_a.py::test_bad"
-    ]
-    assert result["execution_mode"] == "per_file"
-    assert result["requested_test_count"] == 2
-    assert result["process_count"] == 2
-
-
-def test_normalize_test_results_rejects_grouped_payload():
-    with pytest.raises(NameRTSArtifactError, match="per-file execution"):
-        normalize_test_results(
-            make_spec(), {"execution_mode": "harness_grouped", "result": {}}
-        )
-
-
-def test_per_file_regression_subtracts_same_golden_case(tmp_path):
-    golden_failure = "case::testing/test_a.py::testing/test_a.py::test_old"
+def test_grouped_failure_identity_is_independent_of_scope(tmp_path):
+    output = "FAILED testing/test_a.py::test_old\n"
+    golden = normalize_test_results(
+        make_spec(),
+        grouped_payload(output, 1, ["testing/test_a.py", "testing/test_b.py"]),
+    )
     artifact = NameRTSArtifact(
         tmp_path,
         {
             "schema_version": ARTIFACT_SCHEMA_VERSION,
-            "runtime": {
-                "image": "sweb.namerts.test",
-                "source_sha256": "source",
-                "namerts_env": "NameRTS39",
-                "repo_head": "head",
-                "project_name": "pytest",
-            },
+            "runtime": {"image": "sweb.namerts.test", "source_sha256": "source"},
         },
-        {"failure_ids": [golden_failure]},
+        golden,
     )
-    target = {
-        "completed": True,
-        "execution_mode": "per_file",
-        "scope": "selected",
-        "tests": ["testing/test_a.py", "testing/test_b.py"],
-        "test_count": 2,
-        "collection_failed_files": [],
-        "results": [
-            {
-                "test_file": "testing/test_a.py",
-                "return_code": 1,
-                "timed_out": False,
-                "collection_failed": False,
-                "stdout": "FAILED testing/test_a.py::test_old\n",
-                "stderr": "",
-            },
-            {
-                "test_file": "testing/test_b.py",
-                "return_code": 1,
-                "timed_out": False,
-                "collection_failed": False,
-                "stdout": "FAILED testing/test_b.py::test_new\n",
-                "stderr": "",
-            },
-        ],
-    }
-
     report = make_regression_report(
         make_spec(),
         artifact,
-        {"tests_to_run": ["testing/test_a.py", "testing/test_b.py"]},
-        target,
+        {},
+        grouped_payload(output + "FAILED testing/test_a.py::test_new\n", 1),
     )
+    assert report["golden_failure_ids_seen"] == ["case::testing/test_a.py::test_old"]
+    assert report["new_failure_ids"] == ["case::testing/test_a.py::test_new"]
+    assert not report["passed"]
+    same = make_regression_report(make_spec(), artifact, {}, grouped_payload(output, 1))
+    assert same["passed"]
+    assert same["target_summary"]["process_count"] == 1
 
-    assert report["passed"] is False
-    assert report["golden_failure_ids_seen"] == [golden_failure]
-    assert report["new_failure_ids"] == [
-        "case::testing/test_b.py::testing/test_b.py::test_new"
-    ]
+
+@pytest.mark.parametrize(
+    "output,code",
+    [
+        ("ERROR collecting testing/test_a.py", 2),
+        ("internal error", 3),
+        ("FAILED testing/test_a.py::test_before_kill", 137),
+        ("", 0),
+    ],
+)
+def test_grouped_incomplete_results_never_pass(output, code):
+    with pytest.raises(NameRTSArtifactError):
+        normalize_test_results(make_spec(), grouped_payload(output, code))
 
 
-def test_golden_collection_failure_is_filtered_from_selection():
-    selection = {"tests_to_run": ["testing/test_a.py", "testing/test_b.py"]}
-    baseline = {"collection_failed_files": ["testing/test_a.py"]}
+def test_empty_regression_scope_does_not_collect_everything():
+    result = normalize_test_results(make_spec(), grouped_payload(tests=[]))
+    assert result["failure_ids"] == []
+    assert result["process_count"] == 0
 
+
+def test_slow_filter_only_changes_regression_selection():
+    selection = {"tests_to_run": ["testing/test_a.py", "testing/test_slow.py"]}
+    baseline = {"slow_test_files": ["testing/test_slow.py"]}
     filtered = filter_selection_for_baseline(selection, baseline)
-
-    assert filtered["tests_to_run"] == ["testing/test_b.py"]
-    assert filtered["golden_collection_excluded_tests"] == ["testing/test_a.py"]
-    assert filtered["golden_collection_excluded_count"] == 1
-    assert filtered["golden_timeout_excluded_tests"] == []
-    assert filtered["golden_incomplete_excluded_tests"] == ["testing/test_a.py"]
+    assert filtered["tests_to_run"] == ["testing/test_a.py"]
+    assert filtered["slow_excluded_tests"] == ["testing/test_slow.py"]
+    assert selection["tests_to_run"] == ["testing/test_a.py", "testing/test_slow.py"]
 
 
-def test_golden_timeout_is_filtered_from_selection():
-    selection = {"tests_to_run": ["testing/test_a.py", "testing/test_b.py"]}
-    baseline = {
-        "collection_failed_files": [],
-        "results": [
-            {"test_file": "testing/test_a.py", "timed_out": True},
-            {"test_file": "testing/test_b.py", "timed_out": False},
-        ],
-    }
-
-    filtered = filter_selection_for_baseline(selection, baseline)
-
-    assert filtered["tests_to_run"] == ["testing/test_b.py"]
-    assert filtered["golden_timeout_excluded_tests"] == ["testing/test_a.py"]
-    assert filtered["golden_timeout_excluded_count"] == 1
-    assert filtered["golden_incomplete_excluded_tests"] == ["testing/test_a.py"]
-    assert filtered["golden_incomplete_excluded_count"] == 1
-
-
-def test_new_target_collection_failure_is_a_regression(tmp_path):
-    artifact = NameRTSArtifact(
-        tmp_path,
-        {
-            "schema_version": ARTIFACT_SCHEMA_VERSION,
-            "runtime": {
-                "image": "sweb.namerts.test",
-                "source_sha256": "source",
-                "namerts_env": "NameRTS39",
-                "repo_head": "head",
-                "project_name": "pytest",
-            },
-        },
-        {"failure_ids": [], "collection_failed_files": []},
-    )
-    target = {
-        "completed": True,
-        "execution_mode": "per_file",
-        "scope": "selected",
-        "tests": ["testing/test_a.py"],
-        "test_count": 1,
-        "collection_failed_files": ["testing/test_a.py"],
-        "results": [
-            {
-                "test_file": "testing/test_a.py",
-                "return_code": 2,
-                "timed_out": False,
-                "collection_failed": True,
-                "stdout": "ERROR collecting testing/test_a.py",
-                "stderr": "",
-            }
-        ],
-    }
-
-    report = make_regression_report(
-        make_spec(), artifact, {"tests_to_run": target["tests"]}, target
-    )
-
-    assert report["passed"] is False
-    assert report["new_failure_ids"] == ["collect::testing/test_a.py"]
-
-
-def test_unparsed_nonzero_is_comparable_at_file_scope(tmp_path):
-    baseline_payload = {
-        "execution_mode": "per_file",
-        "scope": "golden_full_suite",
-        "tests": ["testing/test_a.py"],
-        "test_count": 1,
-        "collection_failed_files": [],
-        "results": [
-            {
-                "test_file": "testing/test_a.py",
-                "return_code": 2,
-                "timed_out": False,
-                "collection_failed": False,
-                "stdout": "internal error",
-                "stderr": "",
-            }
-        ],
-    }
-    baseline = normalize_test_results(make_spec(), baseline_payload)
-    artifact = NameRTSArtifact(
-        tmp_path,
-        {
-            "schema_version": ARTIFACT_SCHEMA_VERSION,
-            "runtime": {
-                "image": "sweb.namerts.test",
-                "source_sha256": "source",
-                "namerts_env": "NameRTS39",
-                "repo_head": "head",
-                "project_name": "pytest",
-            },
-        },
-        baseline,
-    )
-
-    report = make_regression_report(
-        make_spec(),
-        artifact,
-        {"tests_to_run": baseline_payload["tests"]},
-        baseline_payload,
-    )
-
-    assert report["passed"] is True
-    assert report["golden_failure_ids_seen"] == ["file::testing/test_a.py"]
-
-
-def test_collection_detection_and_adaptive_timeout():
+def test_collection_detection():
     assert is_collection_failure(
-        {
-            "return_code": 2,
-            "timed_out": False,
-            "stdout": "ERROR collecting tests/test_bad.py",
-            "stderr": "",
-        }
+        {"return_code": 2, "stdout": "ERROR collecting tests/a.py"}
     )
     assert not is_collection_failure(
-        {
-            "return_code": 1,
-            "timed_out": False,
-            "stdout": "FAILED tests/test_bad.py::test_bad",
-            "stderr": "",
-        }
+        {"return_code": 1, "stdout": "FAILED tests/a.py::test_a"}
     )
-    assert (
-        target_timeout_for_golden({"duration": 110.0, "timed_out": False}, 120) == 390
+    assert not is_collection_failure(
+        {"return_code": 1, "stdout": "captured: ERROR collecting inner.py\n981 failed, 787 passed"}
     )
-    assert target_timeout_for_golden({"duration": 20.0, "timed_out": False}, 120) == 120
 
 
 def test_parsed_failure_identity_removes_ephemeral_values():
-    golden = (
-        "fitscheck:194 EXCEPTION '/tmp/fits-test-yr9h0fl6/checksum.fits' "
-        "from object at 0x7f1234"
-    )
-    target = (
-        "fitscheck:194 EXCEPTION '/tmp/fits-test-m4qvxt7s/checksum.fits' "
-        "from object at 0x9abcde"
+    assert normalize_parsed_test_id("/tmp/a/x 0x1234") == normalize_parsed_test_id(
+        "/tmp/b/y 0x5678"
     )
 
-    assert normalize_parsed_test_id(golden) == normalize_parsed_test_id(target)
-    assert target_timeout_for_golden({"duration": 120.0, "timed_out": True}, 120) == 120
 
+def test_grouped_script_uses_one_official_invocation(tmp_path, monkeypatch):
+    from swebench.harness.namerts.container_bridge import write_test_script
 
-def test_sympy_runner_uses_deterministic_seed():
-    command = (
-        "PYTHONWARNINGS='ignore::UserWarning,ignore::SyntaxWarning' "
-        "bin/test -C --verbose"
+    config = types.ModuleType("src.config")
+    config.get_test_target = lambda root, path: path
+    monkeypatch.setitem(sys.modules, "src", types.ModuleType("src"))
+    monkeypatch.setitem(sys.modules, "src.config", config)
+    command = tmp_path / "command"
+    command.write_text("tox --current-env -e py -- -rA")
+    script = tmp_path / "run.sh"
+    payload = write_test_script(
+        "/testbed", ["tests/b.py", "tests/a.py"], str(command), str(script), "selected"
     )
-    assert deterministic_test_command(command) == command + " --seed 0"
-    assert deterministic_test_command(command + " --seed 17") == command + " --seed 17"
-    assert deterministic_test_command("pytest -rA") == "pytest -rA"
+    text = script.read_text()
+    assert text.count("tox --current-env") == 1
+    assert "tox --current-env -e py -- -rA -W ignore tests/a.py tests/b.py" in text
+    assert "TOX_WORK_DIR" not in text
+    assert payload["test_count"] == 2
+    write_test_script("/testbed", [], str(command), str(script), "selected")
+    assert "tox " not in script.read_text()
+    subprocess.run(["bash", "-n", str(script)], check=True)
+
+
+def test_grouped_executor_uses_upstream_timeout_without_retry(tmp_path, monkeypatch):
+    from swebench.harness.namerts import runtime
+
+    calls = []
+    monkeypatch.setattr(runtime, "copy_from_container", lambda *args: None)
+
+    def execute(container, command, timeout):
+        calls.append(timeout)
+        return "partial output", True, 3600
+
+    monkeypatch.setattr(runtime, "exec_run_with_timeout", execute)
+    with pytest.raises(NameRTSRuntimeError, match="3600"):
+        runtime.run_grouped_tests(object(), grouped_payload(), tmp_path, 3600)
+    assert calls == [3600]
+    assert (tmp_path / "namerts_test.log").read_text() == "partial output"
+
+
+@pytest.mark.parametrize("persisted", [[], ["tests/fast.py"]])
+def test_preparation_instruments_serially_with_file_deadline(tmp_path, monkeypatch, persisted):
+    from swebench.harness.namerts import container_bridge as bridge
+
+    files = ["tests/fast.py", "tests/boundary.py", "tests/slow.py"]
+    config = types.SimpleNamespace(CACHE_PATH=str(tmp_path))
+    (tmp_path / "NameBDP_parent.tar.gz").write_bytes(b"cache")
+    monkeypatch.setattr(
+        bridge,
+        "configure_timeout",
+        lambda timeout: (
+            config
+            if timeout == 180
+            else pytest.fail("Instrumentation must have a 180-second deadline")
+        ),
+    )
+    monkeypatch.setattr(bridge, "project_path", lambda *args: str(tmp_path))
+    monkeypatch.setattr(bridge, "run_checked", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bridge, "apply_patch", lambda *args: None)
+
+    def evaluate(parent, root, patch, workers, reuse):
+        assert workers == 1
+        assert not reuse
+        return {
+            "instrumentation_results": [
+                {
+                    "test_file": name,
+                    "duration": duration,
+                    "return_code": -1 if name == "tests/slow.py" else 0,
+                    "timed_out": name == "tests/slow.py",
+                }
+                for name, duration in zip(files, [1, 179, 180])
+                if name not in persisted
+            ]
+        }
+
+    monkeypatch.setattr(bridge, "evaluate", evaluate)
+    utils = types.ModuleType("src.utils")
+    utils.collect_all_heuristic = lambda root: files
+    config_module = types.ModuleType("src.config")
+    config_module.get_test_target = lambda root, path: path
+    monkeypatch.setitem(sys.modules, "src", types.ModuleType("src"))
+    monkeypatch.setitem(sys.modules, "src.utils", utils)
+    monkeypatch.setitem(sys.modules, "src.config", config_module)
+    command = tmp_path / "command"
+    command.write_text("pytest -rA")
+    output = tmp_path / "baseline.json"
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"slow_test_files": persisted}))
+    bridge.command_prepare(
+        types.SimpleNamespace(
+            repo_root=str(tmp_path),
+            project_name="pytest",
+            parent="parent",
+            workers=12,
+            per_file_timeout=120,
+            slow_test_threshold=180,
+            instance_policy=str(policy),
+            cache_output=str(tmp_path / "cache.tar.gz"),
+            golden_patch="gold",
+            install_script="install",
+            test_script="setup",
+            test_command=str(command),
+            runner_script=str(tmp_path / "runner.sh"),
+            baseline_output=str(output),
+        )
+    )
+    baseline = json.loads(output.read_text())
+    assert baseline["slow_test_files"] == sorted(persisted + ["tests/slow.py"])
+    assert baseline["tests"] == sorted(set(["tests/boundary.py", "tests/fast.py"]) - set(persisted))
+    assert len(baseline["instrumentation_results"]) == 3 - len(persisted)
+    monkeypatch.delenv("NAMERTS_EXCLUDED_TEST_FILES")
+    assert baseline["completed"] is False  # Only host runner completion can set this.
+
+
+def test_artifact_accepts_excluded_instrumentation_timeout(tmp_path):
+    spec, instance = make_spec(), make_instance()
+    directory = write_artifact(tmp_path, spec, instance)
+    path = directory / GOLDEN_BASELINE_FILENAME
+    baseline = json.loads(path.read_text())
+    baseline["instrumentation_results"][0].update(
+        duration=300, timed_out=True, return_code=-1
+    )
+    path.write_text(json.dumps(baseline))
+    manifest_path = directory / MANIFEST_FILENAME
+    manifest = json.loads(manifest_path.read_text())
+    manifest["files"]["golden_baseline"]["sha256"] = sha256_file(path)
+    manifest_path.write_text(json.dumps(manifest))
+    load_artifact(tmp_path, spec, instance)
+
+
+def test_artifact_rejects_falsified_slow_summary(tmp_path):
+    spec, instance = make_spec(), make_instance()
+    directory = write_artifact(tmp_path, spec, instance)
+    path = directory / GOLDEN_BASELINE_FILENAME
+    baseline = json.loads(path.read_text())
+    baseline["slow_test_files"] = []
+    path.write_text(json.dumps(baseline))
+    manifest_path = directory / MANIFEST_FILENAME
+    manifest = json.loads(manifest_path.read_text())
+    manifest["files"]["golden_baseline"]["sha256"] = sha256_file(path)
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(NameRTSArtifactError, match="Slow-file summary"):
+        load_artifact(tmp_path, spec, instance)
+
+
+@pytest.mark.parametrize("opname", ["LOAD_METHOD", "LOAD_ATTR"])
+@pytest.mark.parametrize(
+    "receiver, expected",
+    [("p", (None, None, "distance")),
+     ("self", (None, "distance", None)),
+     ("cls", (None, "distance", None)),
+     ("sympy", (None, None, "?distance"))],
+)
+def test_namerts_method_load_is_not_a_plain_name(opname, receiver, expected):
+    from collections.abc import Collection
+    from typing import Optional
+
+    source = Path(__file__).parents[1] / "NameRTS/src/bytecode.py"
+    node = next(n for n in ast.parse(source.read_text()).body
+                if isinstance(n, ast.FunctionDef) and n.name == "get_used_names_instr")
+    namespace = {
+        "dis": types.SimpleNamespace(Instruction=object),
+        "opcode": types.SimpleNamespace(hasname={1}),
+        "Optional": Optional, "Collection": Collection, "ROOT_PACKAGE": "sympy",
+    }
+    exec(compile(ast.Module(body=[node], type_ignores=[]), str(source), "exec"), namespace)
+    classify = namespace["get_used_names_instr"]
+    previous = types.SimpleNamespace(argval=receiver)
+    instruction = types.SimpleNamespace(opcode=1, opname=opname, argval="distance")
+    assert classify(instruction, previous) == expected
+    instruction.opname = "LOAD_GLOBAL"
+    assert classify(instruction, previous) == ("distance", None, None)
+
+
+def test_namebdp_forwards_inner_instrumentation_results():
+    source = Path(__file__).parents[1] / "NameRTS/src/namebdp.py"
+    tree = ast.parse(source.read_text())
+    cls = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "NameBDP"
+    )
+    method = next(
+        node
+        for node in cls.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_and_update"
+    )
+    namespace = {}
+    exec(
+        compile(ast.Module(body=[method], type_ignores=[]), str(source), "exec"),
+        namespace,
+    )
+    results = [{"test_file": "tests/test_a.py", "duration": 400}]
+    inner = types.SimpleNamespace(
+        test_results=results, run_and_update=lambda *args: None
+    )
+    outer = types.SimpleNamespace(
+        ekstazip=inner,
+        instrument_monitored_functions=lambda: ({}, {}),
+        file_recover=lambda backups: None,
+    )
+    namespace["run_and_update"](outer, ["tests/test_a.py"])
+    assert outer.test_results is results
+
+
+@pytest.mark.parametrize("quotes", [[], ["'"], ['"'], ["'", '"']])
+def test_introspection_reference_avoids_enclosing_fstring_quotes(quotes):
+    source = Path(__file__).parents[1] / "NameRTS/src/namebdp.py"
+    node = next(n for n in ast.parse(source.read_text()).body
+                if isinstance(n, ast.FunctionDef) and n.name == "_instrumentor_reference")
+    namespace = {}
+    exec(compile(ast.Module(body=[node], type_ignores=[]), str(source), "exec"), namespace)
+    parent = None
+    for i, quote in enumerate(quotes):
+        child = types.SimpleNamespace(type="string_start", start_byte=i, end_byte=i+1)
+        parent = types.SimpleNamespace(type="string", children=[child], parent=parent)
+    reference = namespace["_instrumentor_reference"](
+        types.SimpleNamespace(parent=parent), "".join(quotes).encode()).decode()
+    for quote in quotes:
+        assert quote not in reference
+    code = reference + "capture_getattr_name('name')"
+    assert compile(code, "<reference>", "eval")
+
+
+def test_function_monitor_does_not_inject_local_import():
+    source = Path(__file__).parents[1] / "NameRTS/src/namebdp.py"
+    tree = ast.parse(source.read_text())
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "NameBDP")
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "instrument_monitored_functions")
+    # The monitored body must not bind an extra local: functions can forward
+    # locals() as constructor kwargs (Astropy Parameter.copy does exactly this).
+    text = ast.get_source_segment(source.read_text(), method)
+    assert 'leading_ws + "import nbdp_instrumentor' not in text
+    assert 'added_lines[file_path][line] += 6' in text
 
 
 def test_namerts_filter_excludes_non_runnable_test_directories(tmp_path, monkeypatch):
@@ -594,6 +671,30 @@ def test_namerts_filter_excludes_non_runnable_test_directories(tmp_path, monkeyp
         )
     assert module.is_test_file_pytest(
         pytest_root / "testing/test_collection.py", pytest_root
+    )
+
+    sympy_root = tmp_path / "sympy"
+    monkeypatch.setenv("NAMERTS_PROJECT_NAME", "sympy")
+    for relative in (
+        "sympy/integrals/rubi/tests/test_utility_function.py",
+        "sympy/integrals/rubi/rubi_tests/tests/test_sine.py",
+        "sympy/utilities/tests/test_pytest.py",
+    ):
+        assert not module.is_test_file_pytest(sympy_root / relative, sympy_root)
+        assert not module.is_test_file_pytest(Path(relative), sympy_root)
+    for relative in (
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/rubi_extra/tests/test_rules.py",
+        "tests/rubi/test_rules.py",
+        "sympy/utilities/tests/test_pytest_extra.py",
+    ):
+        assert module.is_test_file_pytest(sympy_root / relative, sympy_root)
+    monkeypatch.setenv("NAMERTS_PROJECT_NAME", "other")
+    assert module.is_test_file_pytest(
+        sympy_root / "sympy/integrals/rubi/tests/test_rules.py", sympy_root
+    )
+    assert module.is_test_file_pytest(
+        sympy_root / "sympy/utilities/tests/test_pytest.py", sympy_root
     )
 
 
@@ -657,6 +758,15 @@ def test_namerts_parallel_runner_isolates_test_process_temp_roots(
         assert environment["MPLCONFIGDIR"] == environment["TMPDIR"]
         assert not os.path.exists(environment["TMPDIR"])
 
+    seen_environments.clear()
+    monkeypatch.setenv("NAMERTS_EXCLUDED_TEST_FILES", '["tests/test_a.py"]')
+    results = module.run_test_files_parallel(
+        str(tmp_path), "testbed", "pytest", ["tests/test_a.py", "tests/test_b.py"],
+        workers=1, timeout=180,
+    )
+    assert [r["test_file"] for r in results] == ["tests/test_b.py"]
+    assert len(seen_environments) == 1
+
 
 def test_runtime_bridge_copy_uses_a_private_source_per_call(monkeypatch):
     copied = []
@@ -716,20 +826,87 @@ def test_upstream_unresolved_does_not_start_namerts(monkeypatch):
     assert updated[spec.instance_id]["namerts_regression"]["skipped"] is True
 
 
-def test_pretest_namerts_error_is_terminal_and_unresolved():
+@pytest.mark.parametrize("override,expected", [(None, 3600), (7200, 7200)])
+def test_rts_timeout_inherits_upstream_unless_overridden(
+    tmp_path, monkeypatch, override, expected
+):
     from swebench.harness import run_evaluation
 
-    report = run_evaluation._make_namerts_pretest_error_report(
-        "pytest-dev__pytest-1",
-        {"model_patch": "patch"},
-        "candidate_base_reset",
-        "reset failed",
+    spec = make_spec()
+    log_dir = tmp_path / "timeout-test" / "gold" / spec.instance_id
+    log_dir.mkdir(parents=True)
+    (log_dir / "report.json").write_text(
+        json.dumps({spec.instance_id: {"resolved": True}})
     )
-    result = report["pytest-dev__pytest-1"]
-    assert result["resolved"] is False
-    assert result["infra_failure"] is True
-    assert result["namerts_regression"]["passed"] is False
-    assert reusable_regression_report(result)
+    monkeypatch.setattr(run_evaluation, "RUN_EVALUATION_LOG_DIR", tmp_path)
+    received = []
+
+    def add_result(*args):
+        received.append(args[-1])
+        return args[0]
+
+    monkeypatch.setattr(run_evaluation, "_add_namerts_result", add_result)
+    run_evaluation.run_instance(
+        spec,
+        {"model_name_or_path": "gold"},
+        None,
+        "timeout-test",
+        timeout=3600,
+        instance=make_instance(),
+        namerts_artifact_root="artifacts",
+        namerts_timeout=override,
+    )
+    assert received == [expected]
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+def test_restore_official_setup_preserves_candidate(tmp_path, monkeypatch, conflict):
+    from swebench.harness.namerts import runtime
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        return subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
+
+    git("init")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    (repo / "tox.ini").write_text("commands = pytest\n")
+    (repo / "code.py").write_text("original\n")
+    git("add", ".")
+    git("commit", "-m", "base")
+    base = git("rev-parse", "HEAD")
+    (repo / "tox.ini").write_text("commands = pytest -rA\n")
+    git("commit", "-am", "official setup")
+    parent = git("rev-parse", "HEAD")
+    git("reset", "--hard", base)
+    (repo / "code.py").write_text("candidate\n")
+    (repo / "new_file.py").write_text("candidate added file\n")
+    if conflict:
+        (repo / "tox.ini").write_text("commands = custom-runner\n")
+    monkeypatch.setattr(runtime, "CONTAINER_WORKDIR", str(repo))
+
+    def run(_container, command, _timeout):
+        command = command.replace(
+            "/tmp/namerts-official-setup.patch", str(tmp_path / "setup.patch")
+        )
+        result = subprocess.run(["bash", "-c", command], capture_output=True, text=True)
+        if result.returncode:
+            raise NameRTSRuntimeError(result.stderr)
+        return result.stdout, 0
+
+    monkeypatch.setattr(runtime, "_run_bridge", run)
+    artifact = NameRTSArtifact(tmp_path, {"runtime": {"repo_head": parent}}, {})
+    if conflict:
+        with pytest.raises(NameRTSRuntimeError):
+            restore_test_environment(None, artifact, base, tmp_path, 60)
+        assert (repo / "tox.ini").read_text() == "commands = custom-runner\n"
+    else:
+        restore_test_environment(None, artifact, base, tmp_path, 60)
+        assert (repo / "tox.ini").read_text() == "commands = pytest -rA\n"
+    assert (repo / "code.py").read_text() == "candidate\n"
+    assert (repo / "new_file.py").read_text() == "candidate added file\n"
 
 
 @pytest.mark.parametrize(
@@ -897,3 +1074,16 @@ def test_only_superseded_tags_for_same_instance_are_removed():
 def test_container_bridge_parses_as_python_36():
     source = Path(__file__).parents[1] / "swebench/harness/namerts/container_bridge.py"
     ast.parse(source.read_text(), filename=str(source), feature_version=(3, 6))
+
+
+def test_sympy_runtime_installs_pytest_in_testbed_only():
+    from swebench.harness.namerts.prepare import _instrumentation_testbed_install
+
+    command = _instrumentation_testbed_install("sympy__sympy-23413", "NameRTS39")
+    assert command == (
+        "RUN /opt/miniconda3/envs/testbed/bin/python -m pip install pytest==7.4.4\n"
+    )
+    assert "pytest==6.2.5" in _instrumentation_testbed_install(
+        "sympy__sympy-1", "NameRTS36"
+    )
+    assert _instrumentation_testbed_install("django__django-1", "NameRTS39") == ""

@@ -5,7 +5,6 @@ This file intentionally remains compatible with Python 3.6.
 
 import argparse
 import json
-import math
 import os
 import re
 import shlex
@@ -22,6 +21,43 @@ CACHED_FILES = [
     "nbdp_cache.json",
     "critical_names.json",
 ]
+
+
+# Only bin/test needs a local configuration edit: its runner overrides -W/env
+# filters. Restore exact bytes after execution; never patch during selection.
+SYMPY_WARNING_RUNNER = r'''
+import pathlib, re, subprocess, sys
+originals = {}
+try:
+    for name in ("sympy/utilities/runtests.py", "sympy/testing/runtests.py"):
+        path = pathlib.Path(name)
+        if not path.is_file():
+            continue
+        original = path.read_bytes()
+        updated = re.sub(
+            rb"(warnings\.(?:simplefilter|filterwarnings)\(\s*)(['\"])error\2",
+            rb"\1'ignore'", original)
+        if updated != original:
+            originals[path] = original
+            path.write_bytes(updated)
+    status = subprocess.call(sys.argv[1:])
+finally:
+    for path, original in originals.items():
+        path.write_bytes(original)
+sys.exit(status)
+'''
+
+
+def rts_warning_command(command):
+    """Use runner options, without modifying Python startup or warning APIs."""
+    tokens = shlex.split(command)
+    if "bin/test" in tokens:
+        command = command.replace(
+            "bin/test", "python -c " + shlex.quote(SYMPY_WARNING_RUNNER) + " bin/test", 1
+        )
+    elif any(token in ("pytest", "py.test", "tox") for token in tokens):
+        command += " -W ignore"
+    return command
 
 
 def write_json(path, payload):
@@ -67,7 +103,8 @@ def project_path(repo_root, project_name):
     original_get_test_target = config.get_test_target
 
     def get_test_command(path):
-        return original_get_test_command(logical_path(path))
+        command = original_get_test_command(logical_path(path))
+        return "env PYTHONWARNINGS=ignore " + rts_warning_command(command)
 
     def get_test_target(path, test_file):
         return original_get_test_target(logical_path(path), test_file)
@@ -202,7 +239,7 @@ def reset_for_patch(repo_path, patch_base, patch_path):
 
 
 def is_collection_failure(result):
-    if result.get("return_code") == 0 or result.get("timed_out"):
+    if result.get("return_code") in (0, 1) or result.get("timed_out"):
         return False
     output = "\n".join(
         (str(result.get("stdout", "")), str(result.get("stderr", "")))
@@ -222,103 +259,72 @@ def is_collection_failure(result):
     )
 
 
-def target_timeout_for_golden(result, default_timeout):
-    """Give a completed golden file enough target-side runtime variance."""
-    if result.get("timed_out"):
-        return default_timeout
-    try:
-        duration = float(result.get("duration", 0.0))
-    except (TypeError, ValueError):
-        duration = 0.0
-    return max(default_timeout, int(math.ceil(duration * 3.0 + 60.0)))
-
-
-def deterministic_test_command(test_command):
-    """Pin runner-level randomness that is independent of Python's hash seed."""
-    try:
-        tokens = shlex.split(test_command)
-    except ValueError:
-        tokens = []
-    if (
-        any(token == "bin/test" or token.endswith("/bin/test") for token in tokens)
-        and "--seed" not in tokens
-    ):
-        return test_command + " --seed 0"
-    return test_command
-
-
-def run_test_files(
-    repo_path,
-    tests,
-    test_command_path,
-    workers,
-    per_file_timeout,
-    scope,
-    golden_results=None,
-):
+def write_test_script(repo_path, tests, test_command_path, output_path, scope):
+    """Prepare one official runner invocation; the host owns its timeout."""
     from src.config import get_test_target
-    from src.utils import run_test_files_parallel
 
     with open(test_command_path) as handle:
-        test_command = handle.read().strip()
-    if not test_command or "\n" in test_command:
+        command = handle.read().strip()
+    if not command or "\n" in command:
         raise RuntimeError("Invalid SWE-bench test command")
-    test_command = deterministic_test_command(test_command)
     tests = sorted(set(tests))
-    targets = {item: get_test_target(repo_path, item) for item in tests}
-    golden_by_file = {
-        item.get("test_file"): item
-        for item in (golden_results or [])
-        if isinstance(item, dict) and item.get("test_file")
-    }
-    test_timeouts = {
-        test_file: target_timeout_for_golden(
-            golden_by_file.get(test_file, {}), per_file_timeout
-        )
-        for test_file in tests
-    }
-    started = time.time()
-    results = run_test_files_parallel(
-        repo_path,
-        "testbed",
-        test_command,
-        tests,
-        workers,
-        timeout=per_file_timeout,
-        test_targets=targets,
-        test_timeouts=test_timeouts,
-    )
-    for result in results:
-        result["collection_failed"] = is_collection_failure(result)
-        if scope == "golden_full_suite":
-            result["target_timeout_seconds"] = target_timeout_for_golden(
-                result, per_file_timeout
-            )
+    targets = [get_test_target(repo_path, item) for item in tests]
+    script = [
+        "#!/bin/bash",
+        "set -e",
+        "source /opt/miniconda3/bin/activate",
+        "conda activate testbed",
+        "cd " + shlex.quote(repo_path),
+        "export PYTHONHASHSEED=0",
+        "export PYTHONWARNINGS=ignore",
+        "set +e",
+        rts_warning_command(command) + " " + " ".join(shlex.quote(target) for target in targets)
+        if tests
+        else "true",
+        "status=$?",
+        "printf '\\n__NAMERTS_TEST_EXIT_CODE__=%s\\n' \"$status\"",
+        'exit "$status"',
+    ]
+    with open(output_path, "w") as handle:
+        handle.write("\n".join(script) + "\n")
     return {
-        "completed": True,
-        "duration": time.time() - started,
-        "execution_mode": "per_file",
-        "test_process_isolation": "per_file_temp_root",
+        "completed": False,
+        "execution_mode": "grouped",
         "scope": scope,
         "tests": tests,
         "test_count": len(tests),
-        "command": test_command,
-        "workers": workers,
-        "per_file_timeout_seconds": per_file_timeout,
-        "collection_failed_files": sorted(
-            item["test_file"] for item in results if item["collection_failed"]
-        ),
-        "results": results,
+        "command": command,
+        "calculation_cache": "yes" if command.startswith("SYMPY_USE_CACHE=yes ") else "official",
     }
 
 
 def command_prepare(args):
     preparation_started = time.time()
-    config = configure_timeout(args.per_file_timeout)
+    config = configure_timeout(180)
+    with open(args.instance_policy) as handle:
+        policy = json.load(handle)
+    persisted = set(policy.get("slow_test_files", []))
+    skipped = set(policy.get("skip_test_files", {}))
+    os.environ["NAMERTS_EXCLUDED_TEST_FILES"] = json.dumps(sorted(persisted | skipped))
     repo_path = project_path(args.repo_root, args.project_name)
     run_checked(["git", "reset", "--hard", args.parent], cwd=repo_path)
     cache_started = time.time()
-    evaluate(args.parent, repo_path, None, args.workers, False)
+    initialization = evaluate(args.parent, repo_path, None, 1, False)
+    instrumentation = initialization.get("instrumentation_results", [])
+    from src.utils import collect_all_heuristic
+
+    discovered_parent = set(collect_all_heuristic(repo_path))
+    expected = sorted(discovered_parent - persisted - skipped)
+    if (
+        not discovered_parent
+        or sorted(item["test_file"] for item in instrumentation) != expected
+    ):
+        raise RuntimeError("Incomplete instrumentation file timings")
+    slow = sorted(persisted | set(
+        item["test_file"]
+        for item in instrumentation
+        if item.get("timed_out") or item["duration"] >= args.slow_test_threshold
+    ))
     cache_duration = time.time() - cache_started
     generated_cache = os.path.join(
         config.CACHE_PATH, "NameBDP_{}.tar.gz".format(args.parent)
@@ -335,24 +341,38 @@ def command_prepare(args):
     apply_patch(repo_path, args.golden_patch)
     run_checked(["/bin/bash", args.install_script], cwd=repo_path)
     run_checked(["/bin/bash", args.test_script], cwd=repo_path)
-    from src.utils import collect_all_heuristic
-
     tests = sorted(collect_all_heuristic(repo_path))
     if not tests:
         raise RuntimeError("NameRTS discovered zero tests in {}".format(repo_path))
     golden_setup_duration = time.time() - golden_setup_started
-    baseline = run_test_files(
+    baseline = write_test_script(
         repo_path,
-        tests,
+        sorted(set(tests) - set(slow) - skipped),
         args.test_command,
-        args.workers,
-        args.per_file_timeout,
+        args.runner_script,
         "golden_full_suite",
     )
+    baseline["slow_test_threshold_seconds"] = args.slow_test_threshold
+    baseline["slow_test_files"] = slow
+    baseline["persisted_slow_test_files"] = sorted(persisted)
+    baseline["instrumentation_discovered_tests"] = sorted(discovered_parent)
+    baseline["instance_policy"] = policy
+    baseline["skip_test_files"] = policy.get("skip_test_files", {})
+    baseline["discovered_tests"] = tests
+    baseline["instrumentation_results"] = [
+        {
+            key: item[key]
+            for key in ("test_file", "duration", "return_code", "timed_out")
+        }
+        for item in instrumentation
+    ]
+    baseline["instrumentation_errors"] = [
+        item for item in instrumentation
+        if item["return_code"] in (2, 3, 4, 127) and not item["timed_out"]
+    ]
     baseline["timing"] = {
         "cache_initialization_seconds": cache_duration,
         "golden_setup_seconds": golden_setup_duration,
-        "golden_test_seconds": baseline["duration"],
         "container_preparation_seconds": time.time() - preparation_started,
     }
     write_json(args.baseline_output, baseline)
@@ -390,40 +410,13 @@ def command_run_tests(args):
     repo_path = project_path(args.repo_root, args.project_name)
     with open(args.selection) as handle:
         selection = json.load(handle)
-    with open(args.baseline) as handle:
-        baseline = json.load(handle)
-    baseline_timeout = int(
-        baseline.get("per_file_timeout_seconds", args.per_file_timeout)
-    )
-    effective_timeout = max(args.per_file_timeout, baseline_timeout)
-    requested = sorted(set(selection.get("tests_to_run", [])))
-    golden_collection_failures = set(baseline.get("collection_failed_files", []))
-    golden_timeouts = {
-        item.get("test_file")
-        for item in baseline.get("results", [])
-        if isinstance(item, dict) and item.get("timed_out")
-    }
-    collection_excluded = sorted(set(requested) & golden_collection_failures)
-    timeout_excluded = sorted(set(requested) & golden_timeouts)
-    incomplete = golden_collection_failures | golden_timeouts
-    excluded = sorted(set(requested) & incomplete)
-    tests = sorted(set(requested) - incomplete)
-    payload = run_test_files(
+    payload = write_test_script(
         repo_path,
-        tests,
+        selection.get("tests_to_run", []),
         args.test_command,
-        args.workers,
-        effective_timeout,
+        args.runner_script,
         "selected",
-        golden_results=baseline.get("results", []),
     )
-    payload["requested_tests_before_baseline_filter"] = requested
-    payload["golden_collection_excluded_tests"] = collection_excluded
-    payload["golden_collection_excluded_count"] = len(collection_excluded)
-    payload["golden_timeout_excluded_tests"] = timeout_excluded
-    payload["golden_timeout_excluded_count"] = len(timeout_excluded)
-    payload["golden_incomplete_excluded_tests"] = excluded
-    payload["golden_incomplete_excluded_count"] = len(excluded)
     write_json(args.output, payload)
 
 
@@ -440,6 +433,9 @@ def parse_args():
     subparsers = parser.add_subparsers(dest="command")
     prepare = subparsers.add_parser("prepare")
     common_arguments(prepare)
+    prepare.add_argument("--slow-test-threshold", type=float, default=180)
+    prepare.add_argument("--instance-policy", required=True)
+    prepare.add_argument("--runner-script", required=True)
     prepare.add_argument("--golden-patch", required=True)
     prepare.add_argument("--install-script", required=True)
     prepare.add_argument("--test-script", required=True)
@@ -457,7 +453,7 @@ def parse_args():
     run_tests = subparsers.add_parser("run-tests")
     common_arguments(run_tests)
     run_tests.add_argument("--selection", required=True)
-    run_tests.add_argument("--baseline", required=True)
+    run_tests.add_argument("--runner-script", required=True)
     run_tests.add_argument("--test-command", required=True)
     run_tests.add_argument("--output", required=True)
     run_tests.set_defaults(handler=command_run_tests)

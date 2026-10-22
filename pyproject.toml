@@ -93,6 +93,9 @@ dev = [
 [tool.setuptools]
 include-package-data = true
 
+[tool.setuptools.package-data]
+"swebench.harness.namerts" = ["instance_policy.json"]
+
 [project.scripts]
 swebench = "swebench.cli.cli:main"
 
