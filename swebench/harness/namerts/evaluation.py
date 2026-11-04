@@ -65,6 +65,7 @@ def run_regression_evaluation(
     workers: int,
     per_file_timeout: int,
     timeout: int,
+    selection_workers: int = 4,
 ) -> dict:
     if is_unsupported_instance(test_spec.instance_id):
         return {
@@ -121,6 +122,7 @@ def run_regression_evaluation(
             artifact,
             log_dir,
             patch_base=instance["base_commit"],
+            selection_workers=selection_workers,
             workers=workers,
             per_file_timeout=per_file_timeout,
             timeout=timeout,

@@ -246,6 +246,7 @@ def run_instance(
     namerts_workers: int = 4,
     namerts_per_file_timeout: int = 120,
     namerts_timeout: int | None = None,
+    namerts_selection_workers: int = 4,
 ):
     """
     Run a single instance with the given prediction.
@@ -307,6 +308,7 @@ def run_instance(
                 namerts_workers,
                 namerts_per_file_timeout,
                 namerts_timeout,
+                namerts_selection_workers,
             )
             report_path.write_text(json.dumps(report, indent=4))
             return instance_id, report
@@ -476,6 +478,7 @@ def run_instance(
                 namerts_workers,
                 namerts_per_file_timeout,
                 namerts_timeout,
+                namerts_selection_workers,
             )
         logger.info(
             f"report: {report}\n"
@@ -517,6 +520,7 @@ def _add_namerts_result(
     workers,
     per_file_timeout,
     timeout,
+    selection_workers=4,
 ):
     result = report[test_spec.instance_id]
     if result.get("resolved"):
@@ -532,6 +536,7 @@ def _add_namerts_result(
             log_dir=log_dir,
             logger=logger,
             workers=workers,
+            selection_workers=selection_workers,
             per_file_timeout=per_file_timeout,
             timeout=timeout,
         )
@@ -555,6 +560,7 @@ def run_instances(
     namerts_workers: int = 4,
     namerts_per_file_timeout: int = 120,
     namerts_timeout: int | None = None,
+    namerts_selection_workers: int = 4,
 ):
     """
     Run all instances for the given predictions in parallel.
@@ -590,6 +596,7 @@ def run_instances(
                 namerts_workers,
                 namerts_per_file_timeout,
                 namerts_timeout,
+                namerts_selection_workers,
             )
         )
 
@@ -844,6 +851,7 @@ def main(
     namerts_workers: int = 4,
     namerts_per_file_timeout: int = 120,
     namerts_timeout: int | None = None,
+    namerts_selection_workers: int = 4,
 ):
     """
     Run evaluation harness for the given dataset and predictions.
@@ -927,6 +935,7 @@ def main(
             namerts_workers=namerts_workers,
             namerts_per_file_timeout=namerts_per_file_timeout,
             namerts_timeout=namerts_timeout,
+            namerts_selection_workers=namerts_selection_workers,
         )
 
     # make final report
@@ -1012,6 +1021,10 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="RTS command timeout in seconds; defaults to --timeout",
+    )
+    parser.add_argument(
+        "--namerts_selection_workers", type=int, default=4,
+        help="NameRTS selection processes per instance (positive; 1 for serial). Does not parallelize tests.",
     )
     # Modal execution args
     parser.add_argument("--modal", type=str2bool, default=False, help="Run on Modal")

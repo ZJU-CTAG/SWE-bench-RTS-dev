@@ -409,6 +409,7 @@ def test_grouped_script_uses_one_official_invocation(tmp_path, monkeypatch):
 
     config = types.ModuleType("src.config")
     config.get_test_target = lambda root, path: path
+    config.get_test_filter_args = lambda root: []
     monkeypatch.setitem(sys.modules, "src", types.ModuleType("src"))
     monkeypatch.setitem(sys.modules, "src.config", config)
     command = tmp_path / "command"
@@ -421,6 +422,9 @@ def test_grouped_script_uses_one_official_invocation(tmp_path, monkeypatch):
     assert text.count("tox --current-env") == 1
     assert "tox --current-env -e py -- -rA -W ignore tests/a.py tests/b.py" in text
     assert "TOX_WORK_DIR" not in text
+    assert "export PYTHONIOENCODING=utf-8" in text
+    for variable in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+        assert "export " + variable + "=1" in text
     assert payload["test_count"] == 2
     write_test_script("/testbed", [], str(command), str(script), "selected")
     assert "tox " not in script.read_text()
@@ -445,7 +449,8 @@ def test_grouped_executor_uses_upstream_timeout_without_retry(tmp_path, monkeypa
 
 
 @pytest.mark.parametrize("persisted", [[], ["tests/fast.py"]])
-def test_preparation_instruments_serially_with_file_deadline(tmp_path, monkeypatch, persisted):
+@pytest.mark.parametrize("skipped", [{}, {"tests/boundary.py": "network-only file"}])
+def test_preparation_instruments_serially_with_file_deadline(tmp_path, monkeypatch, persisted, skipped):
     from swebench.harness.namerts import container_bridge as bridge
 
     files = ["tests/fast.py", "tests/boundary.py", "tests/slow.py"]
@@ -467,6 +472,7 @@ def test_preparation_instruments_serially_with_file_deadline(tmp_path, monkeypat
     def evaluate(parent, root, patch, workers, reuse):
         assert workers == 1
         assert not reuse
+        assert set(json.loads(os.environ["NAMERTS_EXCLUDED_TEST_FILES"])) == set(persisted) | set(skipped)
         return {
             "instrumentation_results": [
                 {
@@ -476,7 +482,7 @@ def test_preparation_instruments_serially_with_file_deadline(tmp_path, monkeypat
                     "timed_out": name == "tests/slow.py",
                 }
                 for name, duration in zip(files, [1, 179, 180])
-                if name not in persisted
+                if name not in persisted and name not in skipped
             ]
         }
 
@@ -485,6 +491,7 @@ def test_preparation_instruments_serially_with_file_deadline(tmp_path, monkeypat
     utils.collect_all_heuristic = lambda root: files
     config_module = types.ModuleType("src.config")
     config_module.get_test_target = lambda root, path: path
+    config_module.get_test_filter_args = lambda root: []
     monkeypatch.setitem(sys.modules, "src", types.ModuleType("src"))
     monkeypatch.setitem(sys.modules, "src.utils", utils)
     monkeypatch.setitem(sys.modules, "src.config", config_module)
@@ -492,7 +499,7 @@ def test_preparation_instruments_serially_with_file_deadline(tmp_path, monkeypat
     command.write_text("pytest -rA")
     output = tmp_path / "baseline.json"
     policy = tmp_path / "policy.json"
-    policy.write_text(json.dumps({"slow_test_files": persisted}))
+    policy.write_text(json.dumps({"slow_test_files": persisted, "skip_test_files": skipped}))
     bridge.command_prepare(
         types.SimpleNamespace(
             repo_root=str(tmp_path),
@@ -513,8 +520,10 @@ def test_preparation_instruments_serially_with_file_deadline(tmp_path, monkeypat
     )
     baseline = json.loads(output.read_text())
     assert baseline["slow_test_files"] == sorted(persisted + ["tests/slow.py"])
-    assert baseline["tests"] == sorted(set(["tests/boundary.py", "tests/fast.py"]) - set(persisted))
-    assert len(baseline["instrumentation_results"]) == 3 - len(persisted)
+    assert baseline["tests"] == sorted(set(["tests/boundary.py", "tests/fast.py"]) - set(persisted) - set(skipped))
+    assert len(baseline["instrumentation_results"]) == 3 - len(persisted) - len(skipped)
+    selected = filter_selection_for_baseline({"tests_to_run": files}, baseline)
+    assert selected["tests_to_run"] == baseline["tests"]
     monkeypatch.delenv("NAMERTS_EXCLUDED_TEST_FILES")
     assert baseline["completed"] is False  # Only host runner completion can set this.
 
@@ -665,6 +674,7 @@ def test_namerts_filter_excludes_non_runnable_test_directories(tmp_path, monkeyp
 
     pytest_root = tmp_path / "pytest"
     monkeypatch.setenv("NAMERTS_PROJECT_NAME", "pytest")
+    assert not module.is_test_file_pytest(pytest_root / "testing/test_nose.py", pytest_root)
     for directory in ("example", "examples", "example_scripts", "fixtures"):
         assert not module.is_test_file_pytest(
             pytest_root / "testing" / directory / "test_sample.py", pytest_root
@@ -674,6 +684,20 @@ def test_namerts_filter_excludes_non_runnable_test_directories(tmp_path, monkeyp
     )
 
     sympy_root = tmp_path / "sympy"
+    sphinx_root = tmp_path / "sphinx"
+    monkeypatch.setenv("NAMERTS_PROJECT_NAME", "sphinx")
+    assert not module.is_test_file_pytest(
+        sphinx_root / "tests/test_build_linkcheck.py", sphinx_root
+    )
+    assert not module.is_test_file_pytest(Path("tests/test_build_linkcheck.py"), sphinx_root)
+    assert module.is_test_file_pytest(
+        sphinx_root / "tests/test_build_linkcheck_extra.py", sphinx_root
+    )
+    assert module.is_test_file_pytest(sphinx_root / "tests/test_build_html.py", sphinx_root)
+    monkeypatch.setenv("NAMERTS_PROJECT_NAME", "other")
+    assert module.is_test_file_pytest(
+        sphinx_root / "tests/test_build_linkcheck.py", sphinx_root
+    )
     monkeypatch.setenv("NAMERTS_PROJECT_NAME", "sympy")
     for relative in (
         "sympy/integrals/rubi/tests/test_utility_function.py",
@@ -842,7 +866,8 @@ def test_rts_timeout_inherits_upstream_unless_overridden(
     received = []
 
     def add_result(*args):
-        received.append(args[-1])
+        received.append(args[-2])
+        assert args[-1] == 4
         return args[0]
 
     monkeypatch.setattr(run_evaluation, "_add_namerts_result", add_result)

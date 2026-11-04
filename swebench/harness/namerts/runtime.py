@@ -322,7 +322,10 @@ def run_selection(
     workers: int,
     per_file_timeout: int,
     timeout: int,
+    selection_workers: int = 4,
 ) -> dict[str, Any]:
+    if selection_workers < 1:
+        raise ValueError("selection_workers must be positive")
     copy_to_container(container, artifact.cache_path, CONTAINER_CACHE)
     command = _bridge_command(
         artifact,
@@ -330,6 +333,8 @@ def run_selection(
         workers=workers,
         per_file_timeout=per_file_timeout,
         extra_args=[
+            "--selection-workers",
+            str(selection_workers),
             "--patch",
             CONTAINER_PATCH_FILE,
             "--patch-base",

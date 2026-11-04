@@ -88,7 +88,7 @@ applies only to the derived RTS runner: the original upstream F2P/P2P script is
 unchanged. Both sides must use the same cache mode; old uncached baselines cannot
 be reused. The baseline records `calculation_cache=yes`.
 
-Artifacts now use schema version 7 / runtime recipe 16. Older artifacts must
+Artifacts now use schema version 8 / runtime recipe 22. Older artifacts must
 be prepared again; they lack complete instrumentation timings and the new
 execution policy. The baseline stores `instrumentation_results`,
 `slow_test_files`, the threshold, grouped output and stage timings. Parsed
@@ -162,11 +162,44 @@ provide `pytest_version`/`py_version` overrides and `skip_test_files`, a mapping
 from repository-relative Python files to reasons. Compatibility skips are kept
 separate from measured `slow_test_files`. They apply to instrumentation, the
 golden RTS baseline and selected RTS tests, never the original required tests.
+NameRTS's shared discovery exclusions also omit Sphinx's network-dependent
+`tests/test_build_linkcheck.py` from all three RTS phases. It is not classified
+as a measured slow test. Official required linkcheck tests still run unchanged.
 Changing compatibility policy requires fresh artifacts. Source inspection used
 to identify affected instances is an offline maintenance activity, not runtime
 heuristics or automatic suppression of new candidate errors.
 
-RTS instrumentation, golden baselines and selected tests use warning-ignore
+RTS instrumentation, golden baselines and selected tests use
+`PYTHONIOENCODING=utf-8` for consistent non-ASCII output
+even under an ASCII locale. The encoding setting is RTS-only; official F2P/P2P
+commands are unchanged. RTS grouped runners also set `OMP_NUM_THREADS=1`,
+`OPENBLAS_NUM_THREADS=1`, and `MKL_NUM_THREADS=1`, matching instrumentation and
+avoiding multiplied numerical-library thread pools across instance workers.
+Recipe 22 requires fresh images and artifacts.
+All RTS phases share NameRTS's `get_test_filter_args` policy: instrumentation
+uses it directly, and golden/selected runners append the same arguments to the
+official runner command. Put test exclusions in that shared API, not in an
+instrumentation-only command. Rules apply to every instance of a project,
+without instance-ID special cases. Seaborn excludes `test_load_datasets` and
+`test_load_cached_datasets` with `-k`; pandas retains its `not single_cpu` marker
+filter. Sphinx excludes `test_latex_images` with `-k` because older revisions
+download remote images without a request timeout. This consistency rule covers both file-level and test-function-level
+filters. Shared discovery exclusions (GIS/examples, Sphinx linkcheck, SymPy
+Rubi/self-tests), explicit skip files, and persisted slow files remain excluded
+throughout RTS. Newly discovered slow files are excluded from the subsequent
+golden/selected runs and from instrumentation on future preparations.
+These filters never change the original dataset F2P/P2P evaluation command.
+
+Use `--namerts_selection_workers 4` (the default) to control dependency-propagation
+processes per instance. Set it to `1` for serial selection. This option does not
+parallelize test execution or instrumentation; account for instance-level
+`--max_workers` when choosing it. A NameRTS checkout supporting `SELECT_WORKERS`
+is required. Existing immutable artifacts retain their original source fingerprints;
+selection-only performance probes may overlay updated code in disposable containers,
+but must not relabel those artifacts as newly prepared production artifacts.
+Artifacts store `test_filter_args` with the baseline command for auditing;
+recipe-21 baselines must be regenerated because their test scope can differ.
+RTS tests use warning-ignore
 configuration: `PYTHONWARNINGS=ignore` and `-W ignore` for pytest (including
 pytest arguments forwarded by tox). SymPy's `bin/test` explicitly enables
 warning errors internally, so an RTS-only wrapper temporarily changes those

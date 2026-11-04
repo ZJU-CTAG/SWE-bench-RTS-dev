@@ -101,16 +101,18 @@ def project_path(repo_root, project_name):
 
     original_get_test_command = config.get_test_command
     original_get_test_target = config.get_test_target
+    original_get_test_filter_args = config.get_test_filter_args
 
     def get_test_command(path):
         command = original_get_test_command(logical_path(path))
-        return "env PYTHONWARNINGS=ignore " + rts_warning_command(command)
+        return "env PYTHONIOENCODING=utf-8 PYTHONWARNINGS=ignore " + rts_warning_command(command)
 
     def get_test_target(path, test_file):
         return original_get_test_target(logical_path(path), test_file)
 
     config.get_test_command = get_test_command
     config.get_test_target = get_test_target
+    config.get_test_filter_args = lambda path: original_get_test_filter_args(logical_path(path))
     physical_name = os.path.basename(os.path.normpath(repo_root))
     if project_name in config.INSTRUMENTATION_BLACKLIST:
         config.INSTRUMENTATION_BLACKLIST[physical_name] = set(
@@ -261,12 +263,15 @@ def is_collection_failure(result):
 
 def write_test_script(repo_path, tests, test_command_path, output_path, scope):
     """Prepare one official runner invocation; the host owns its timeout."""
-    from src.config import get_test_target
+    from src.config import get_test_filter_args, get_test_target
 
     with open(test_command_path) as handle:
         command = handle.read().strip()
     if not command or "\n" in command:
         raise RuntimeError("Invalid SWE-bench test command")
+    filter_args = get_test_filter_args(repo_path)
+    if filter_args:
+        command += " " + " ".join(shlex.quote(arg) for arg in filter_args)
     tests = sorted(set(tests))
     targets = [get_test_target(repo_path, item) for item in tests]
     script = [
@@ -277,6 +282,11 @@ def write_test_script(repo_path, tests, test_command_path, output_path, scope):
         "cd " + shlex.quote(repo_path),
         "export PYTHONHASHSEED=0",
         "export PYTHONWARNINGS=ignore",
+        "export PYTHONIOENCODING=utf-8",
+        # Match instrumentation; instance concurrency must not multiply BLAS/OMP pools.
+        "export OMP_NUM_THREADS=1",
+        "export OPENBLAS_NUM_THREADS=1",
+        "export MKL_NUM_THREADS=1",
         "set +e",
         rts_warning_command(command) + " " + " ".join(shlex.quote(target) for target in targets)
         if tests
@@ -285,6 +295,9 @@ def write_test_script(repo_path, tests, test_command_path, output_path, scope):
         "printf '\\n__NAMERTS_TEST_EXIT_CODE__=%s\\n' \"$status\"",
         'exit "$status"',
     ]
+    if os.environ.get("NAMERTS_PROJECT_NAME") in ("sklearn", "scikit-learn"):
+        # Match instrumentation even when conftest resets BLAS/OpenMP limits.
+        script.insert(script.index("set +e"), "export LOKY_MAX_CPU_COUNT=1")
     with open(output_path, "w") as handle:
         handle.write("\n".join(script) + "\n")
     return {
@@ -294,6 +307,7 @@ def write_test_script(repo_path, tests, test_command_path, output_path, scope):
         "tests": tests,
         "test_count": len(tests),
         "command": command,
+        "test_filter_args": filter_args,
         "calculation_cache": "yes" if command.startswith("SYMPY_USE_CACHE=yes ") else "official",
     }
 
@@ -380,6 +394,12 @@ def command_prepare(args):
 
 def command_select(args):
     config = configure_timeout(args.per_file_timeout)
+    if args.selection_workers < 1:
+        raise ValueError("selection_workers must be positive")
+    if not hasattr(config, "SELECT_WORKERS"):
+        raise RuntimeError("NameRTS image lacks configurable selection workers; rebuild with updated NameRTS")
+    config.SELECT_WORKERS = args.selection_workers
+    config.SELECT_USE_PARALLEL = args.selection_workers > 1
     repo_path = project_path(args.repo_root, args.project_name)
     cache_destination = os.path.join(
         config.CACHE_PATH, "NameBDP_{}.tar.gz".format(args.parent)
@@ -400,6 +420,7 @@ def command_select(args):
         if analysis_patch != args.patch and os.path.exists(analysis_patch):
             os.unlink(analysis_patch)
     selection["completed"] = True
+    selection["selection_workers"] = args.selection_workers
     selection["ignored_binary_diff_count"] = len(omitted)
     selection["ignored_binary_diff_headers"] = omitted
     write_json(args.output, selection)
@@ -445,6 +466,7 @@ def parse_args():
     prepare.set_defaults(handler=command_prepare)
     select = subparsers.add_parser("select")
     common_arguments(select)
+    select.add_argument("--selection-workers", type=int, default=4)
     select.add_argument("--patch", required=True)
     select.add_argument("--patch-base", required=True)
     select.add_argument("--cache", required=True)

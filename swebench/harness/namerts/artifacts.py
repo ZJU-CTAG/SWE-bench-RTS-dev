@@ -15,7 +15,7 @@ from swebench.harness.namerts.policy import read_policy
 
 
 ARTIFACT_SCHEMA_VERSION = 8
-RUNTIME_RECIPE_VERSION = "19"
+RUNTIME_RECIPE_VERSION = "24"
 MANIFEST_FILENAME = "manifest.json"
 PARENT_CACHE_FILENAME = "parent_cache.tar.gz"
 GOLDEN_BASELINE_FILENAME = "golden_baseline.json"

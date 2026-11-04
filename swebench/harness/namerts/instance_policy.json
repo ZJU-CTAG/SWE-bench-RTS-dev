@@ -1,5 +1,90 @@
 {
   "instances": {
+    "astropy__astropy-12907": {
+      "test_dependencies": [
+        "numpy==1.23.5"
+      ]
+    },
+    "astropy__astropy-13033": {
+      "test_dependencies": [
+        "numpy==1.23.5"
+      ]
+    },
+    "astropy__astropy-13236": {
+      "test_dependencies": [
+        "numpy==1.23.5"
+      ]
+    },
+    "astropy__astropy-7606": {
+      "test_dependencies": [
+        "coverage==4.5.4"
+      ]
+    },
+    "astropy__astropy-8707": {
+      "skip_test_files": {
+        "astropy/io/ascii/tests/test_ecsv.py": "Base collection fails: legacy EarthLocation structured-dtype conversion is incompatible with NumPy 1.19.5.",
+        "astropy/io/fits/tests/test_connect.py": "Base collection fails: legacy EarthLocation structured-dtype conversion is incompatible with NumPy 1.19.5.",
+        "astropy/io/misc/tests/test_hdf5.py": "Base collection fails: legacy EarthLocation structured-dtype conversion is incompatible with NumPy 1.19.5.",
+        "astropy/utils/tests/test_timer.py": "Base collection fails: legacy collections ABC import raises DeprecationWarning under Python 3.9.",
+        "astropy_helpers/astropy_helpers/tests/test_ah_bootstrap.py": "Golden collection fails: vendored build-tool self-test imports deprecated imp under Python 3.9.",
+        "astropy_helpers/astropy_helpers/tests/test_git_helpers.py": "Golden collection fails: vendored build-tool self-test imports deprecated imp under Python 3.9.",
+        "astropy_helpers/astropy_helpers/tests/test_setup_helpers.py": "Golden collection fails: vendored build-tool self-test imports deprecated imp under Python 3.9.",
+        "astropy_helpers/astropy_helpers/tests/test_utils.py": "Golden collection fails: vendored build-tool self-test imports deprecated imp under Python 3.9."
+      },
+      "test_dependencies": [
+        "numpy==1.19.5",
+        "matplotlib==3.5.3",
+        "coverage==4.5.4"
+      ]
+    },
+    "astropy__astropy-8872": {
+      "skip_test_files": {
+        "astropy_helpers/astropy_helpers/tests/test_ah_bootstrap.py": "Golden collection fails: vendored helper imports deprecated imp under Python 3.9.",
+        "astropy_helpers/astropy_helpers/tests/test_git_helpers.py": "Golden collection fails: vendored helper imports deprecated imp under Python 3.9.",
+        "astropy_helpers/astropy_helpers/tests/test_setup_helpers.py": "Golden collection fails: vendored helper imports deprecated imp under Python 3.9.",
+        "astropy_helpers/astropy_helpers/tests/test_utils.py": "Golden collection fails: vendored helper imports deprecated imp under Python 3.9."
+      },
+      "test_dependencies": [
+        "numpy==1.19.5",
+        "matplotlib==3.5.3",
+        "coverage==4.5.4"
+      ]
+    },
+    "django__django-11333": {
+      "slow_test_files": [
+        "tests/test_runner/tests.py"
+      ]
+    },
+    "matplotlib__matplotlib-13989": {
+      "slow_test_files": [
+        "lib/matplotlib/tests/test_mathtext.py"
+      ]
+    },
+    "matplotlib__matplotlib-14623": {
+      "slow_test_files": [
+        "lib/matplotlib/tests/test_mathtext.py"
+      ]
+    },
+    "mwaskom__seaborn-3187": {
+      "slow_test_files": [
+        "tests/test_utils.py"
+      ]
+    },
+    "pydata__xarray-4094": {
+      "slow_test_files": [
+        "xarray/tests/test_units.py"
+      ]
+    },
+    "pydata__xarray-4356": {
+      "slow_test_files": [
+        "xarray/tests/test_units.py"
+      ]
+    },
+    "pydata__xarray-4629": {
+      "slow_test_files": [
+        "xarray/tests/test_units.py"
+      ]
+    },
     "pydata__xarray-4687": {
       "skip_test_files": {
         "xarray/tests/test_backends.py": "Golden collection: legacy helpers import pandas.core.computation.ops.UndefinedVariableError, absent in official environment.",
@@ -45,9 +130,138 @@
         "xarray/tests/test_options.py": "Golden collection: legacy helpers import pandas.core.computation.ops.UndefinedVariableError, absent in official environment."
       }
     },
+    "pylint-dev__pylint-4661": {
+      "test_dependencies": [
+        "GitPython==3.1.43",
+        "appdirs==1.4.4"
+      ]
+    },
+    "pytest-dev__pytest-7324": {
+      "test_dependencies": [
+        "xmlschema==1.10.0",
+        "setuptools==65.5.1"
+      ]
+    },
+    "scikit-learn__scikit-learn-25102": {
+      "slow_test_files": [
+        "sklearn/tests/test_common.py"
+      ]
+    },
+    "scikit-learn__scikit-learn-25232": {
+      "slow_test_files": [
+        "sklearn/tests/test_common.py"
+      ]
+    },
+    "scikit-learn__scikit-learn-25973": {
+      "slow_test_files": [
+        "sklearn/cluster/tests/test_k_means.py",
+        "sklearn/cluster/tests/test_mean_shift.py",
+        "sklearn/cluster/tests/test_optics.py",
+        "sklearn/decomposition/tests/test_kernel_pca.py",
+        "sklearn/ensemble/_hist_gradient_boosting/tests/test_gradient_boosting.py",
+        "sklearn/ensemble/_hist_gradient_boosting/tests/test_grower.py",
+        "sklearn/ensemble/_hist_gradient_boosting/tests/test_monotonic_contraints.py",
+        "sklearn/ensemble/_hist_gradient_boosting/tests/test_splitting.py",
+        "sklearn/ensemble/_hist_gradient_boosting/tests/test_warm_start.py",
+        "sklearn/feature_selection/tests/test_from_model.py",
+        "sklearn/feature_selection/tests/test_sequential.py",
+        "sklearn/impute/tests/test_impute.py",
+        "sklearn/inspection/tests/test_partial_dependence.py",
+        "sklearn/linear_model/_glm/tests/test_glm.py",
+        "sklearn/linear_model/tests/test_ridge.py",
+        "sklearn/manifold/tests/test_spectral_embedding.py",
+        "sklearn/manifold/tests/test_t_sne.py",
+        "sklearn/metrics/tests/test_pairwise_distances_reduction.py",
+        "sklearn/neighbors/tests/test_neighbors.py",
+        "sklearn/neighbors/tests/test_neighbors_pipeline.py",
+        "sklearn/tests/test_common.py"
+      ]
+    },
+    "scikit-learn__scikit-learn-26194": {
+      "slow_test_files": [
+        "sklearn/tests/test_common.py"
+      ]
+    },
+    "scikit-learn__scikit-learn-26323": {
+      "slow_test_files": [
+        "sklearn/tests/test_common.py"
+      ]
+    },
+    "sphinx-doc__sphinx-10435": {
+      "slow_test_files": [
+        "tests/test_build_latex.py"
+      ]
+    },
+    "sphinx-doc__sphinx-10466": {
+      "slow_test_files": [
+        "tests/test_build_latex.py"
+      ]
+    },
+    "sphinx-doc__sphinx-10673": {
+      "slow_test_files": [
+        "tests/test_build_latex.py"
+      ]
+    },
+    "sphinx-doc__sphinx-11445": {
+      "slow_test_files": [
+        "tests/test_build_epub.py",
+        "tests/test_build_latex.py",
+        "tests/test_build_texinfo.py"
+      ]
+    },
+    "sphinx-doc__sphinx-11510": {
+      "slow_test_files": [
+        "tests/test_build_epub.py",
+        "tests/test_build_latex.py"
+      ]
+    },
+    "sphinx-doc__sphinx-7440": {
+      "slow_test_files": [
+        "tests/test_build_latex.py"
+      ]
+    },
+    "sphinx-doc__sphinx-7454": {
+      "slow_test_files": [
+        "tests/test_build_latex.py"
+      ]
+    },
+    "sphinx-doc__sphinx-7462": {
+      "slow_test_files": [
+        "tests/test_build_latex.py"
+      ]
+    },
+    "sphinx-doc__sphinx-7748": {
+      "slow_test_files": [
+        "tests/test_build_latex.py"
+      ]
+    },
+    "sphinx-doc__sphinx-8269": {
+      "slow_test_files": [
+        "tests/test_build_latex.py"
+      ]
+    },
+    "sphinx-doc__sphinx-8548": {
+      "slow_test_files": [
+        "tests/test_build_latex.py"
+      ]
+    },
+    "sphinx-doc__sphinx-8638": {
+      "slow_test_files": [
+        "tests/test_build_latex.py"
+      ]
+    },
+    "sphinx-doc__sphinx-9281": {
+      "slow_test_files": [
+        "tests/test_build_latex.py"
+      ]
+    },
+    "sphinx-doc__sphinx-9698": {
+      "slow_test_files": [
+        "tests/test_build_latex.py"
+      ]
+    },
     "sympy__sympy-11618": {
-      "py_version": "1.11.0",
-      "pytest_version": "4.6.11",
+      "pytest_version": "7.4.4",
       "slow_test_files": [
         "sympy/assumptions/tests/test_query.py",
         "sympy/core/tests/test_wester.py",
@@ -74,15 +288,45 @@
     },
     "sympy__sympy-12419": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/assumptions/tests/test_refine.py",
+        "sympy/core/tests/test_wester.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/stats/tests/test_finite_rv.py"
+      ]
     },
     "sympy__sympy-12481": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/assumptions/tests/test_refine.py",
+        "sympy/core/tests/test_wester.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/stats/tests/test_finite_rv.py"
+      ]
     },
     "sympy__sympy-12489": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/assumptions/tests/test_refine.py",
+        "sympy/core/tests/test_wester.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/stats/tests/test_finite_rv.py"
+      ]
     },
     "sympy__sympy-13031": {
       "py_version": "1.11.0",
@@ -99,63 +343,198 @@
     },
     "sympy__sympy-13091": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/physics/mechanics/tests/test_kane3.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-13372": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/physics/mechanics/tests/test_kane3.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-13480": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/physics/mechanics/tests/test_kane3.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-13551": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/physics/mechanics/tests/test_kane3.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-13615": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/physics/mechanics/tests/test_kane3.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-13647": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/physics/mechanics/tests/test_kane3.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-13757": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/physics/mechanics/tests/test_kane3.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-13798": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/physics/mechanics/tests/test_kane3.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-13852": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/physics/mechanics/tests/test_kane3.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-13877": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/physics/mechanics/tests/test_kane3.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-13878": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/physics/mechanics/tests/test_kane3.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-13974": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/physics/mechanics/tests/test_kane3.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-14248": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-14531": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-14711": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-14976": {
       "py_version": "1.11.0",
@@ -172,27 +551,84 @@
     },
     "sympy__sympy-15017": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-15345": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-15349": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-15599": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-15809": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-15875": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-15976": {
       "py_version": "1.11.0",
@@ -209,15 +645,43 @@
     },
     "sympy__sympy-16450": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-16597": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-16766": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-16792": {
       "py_version": "1.11.0",
@@ -235,19 +699,58 @@
     },
     "sympy__sympy-16886": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-17139": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-17318": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-17630": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-17655": {
       "py_version": "1.11.0",
@@ -264,7 +767,16 @@
     },
     "sympy__sympy-18189": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-18199": {
       "slow_test_files": [
@@ -290,15 +802,149 @@
         "sympy/utilities/tests/test_wester.py"
       ]
     },
+    "sympy__sympy-18698": {
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
     "sympy__sympy-18763": {
       "py_version": "1.11.0",
-      "pytest_version": "4.6.11"
+      "pytest_version": "4.6.11",
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-19040": {
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_ode.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
     },
     "sympy__sympy-19346": {
       "slow_test_files": [
         "sympy/integrals/tests/test_failing_integrals.py",
         "sympy/integrals/tests/test_integrals.py",
         "sympy/integrals/tests/test_manual.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_ode.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-19495": {
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_heurisch.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_ode.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-19637": {
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/polys/tests/test_partfrac.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_ode.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-19783": {
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_ode.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-19954": {
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_ode.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-20154": {
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_ode.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-20428": {
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_ode.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-20438": {
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
         "sympy/simplify/tests/test_hyperexpand.py",
         "sympy/solvers/ode/tests/test_ode.py",
         "sympy/solvers/ode/tests/test_single.py",
@@ -321,6 +967,52 @@
         "sympy/utilities/tests/test_wester.py"
       ]
     },
+    "sympy__sympy-20801": {
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_ode.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-20916": {
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_meijerint.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_ode.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/stats/tests/test_continuous_rv.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-21379": {
+      "slow_test_files": [
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
     "sympy__sympy-21596": {
       "slow_test_files": [
         "sympy/assumptions/tests/test_query.py",
@@ -333,6 +1025,127 @@
         "sympy/solvers/ode/tests/test_single.py",
         "sympy/solvers/ode/tests/test_systems.py",
         "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-21612": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-21847": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_meijerint.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/series/tests/test_gruntz.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/stats/tests/test_continuous_rv.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-21930": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/series/tests/test_gruntz.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-22080": {
+      "skip_test_files": {
+        "sympy/physics/mechanics/tests/test_joint.py": "Golden self-evaluation differs between full and selected scope at test_pinjoint_arbitrary_axis (angle.xreplace assertion); exclude scope-sensitive regression file, not official required tests."
+      },
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/functions/special/tests/test_bessel.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/series/tests/test_gruntz.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-22456": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/series/tests/test_gruntz.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/solvers/tests/test_solveset.py",
+        "sympy/stats/tests/test_continuous_rv.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-22714": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/series/tests/test_gruntz.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/stats/tests/test_continuous_rv.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-22914": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/series/tests/test_gruntz.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/stats/tests/test_continuous_rv.py",
         "sympy/utilities/tests/test_wester.py"
       ]
     },
@@ -369,6 +1182,99 @@
         "sympy/utilities/tests/test_wester.py"
       ]
     },
+    "sympy__sympy-23534": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/concrete/tests/test_sums_products.py",
+        "sympy/functions/elementary/tests/test_trigonometric.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_meijerint.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/series/tests/test_gruntz.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/simplify/tests/test_simplify.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/stats/tests/test_continuous_rv.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-23824": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/concrete/tests/test_sums_products.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_meijerint.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/series/tests/test_gruntz.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/stats/tests/test_continuous_rv.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-23950": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_meijerint.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/series/tests/test_gruntz.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/simplify/tests/test_simplify.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/stats/tests/test_continuous_rv.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-24066": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_meijerint.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/stats/tests/test_continuous_rv.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-24213": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_meijerint.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/stats/tests/test_continuous_rv.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
     "sympy__sympy-24443": {
       "slow_test_files": [
         "sympy/integrals/tests/test_failing_integrals.py",
@@ -380,6 +1286,59 @@
         "sympy/solvers/ode/tests/test_single.py",
         "sympy/solvers/ode/tests/test_systems.py",
         "sympy/solvers/tests/test_solvers.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-24539": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/simplify/tests/test_simplify.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/solvers/tests/test_solveset.py",
+        "sympy/stats/tests/test_continuous_rv.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-24562": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/concrete/tests/test_sums_products.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_meijerint.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/stats/tests/test_continuous_rv.py",
+        "sympy/utilities/tests/test_wester.py"
+      ]
+    },
+    "sympy__sympy-24661": {
+      "slow_test_files": [
+        "sympy/assumptions/tests/test_query.py",
+        "sympy/functions/special/tests/test_bessel.py",
+        "sympy/integrals/tests/test_failing_integrals.py",
+        "sympy/integrals/tests/test_integrals.py",
+        "sympy/integrals/tests/test_manual.py",
+        "sympy/integrals/tests/test_transforms.py",
+        "sympy/matrices/tests/test_matrices.py",
+        "sympy/simplify/tests/test_hyperexpand.py",
+        "sympy/solvers/ode/tests/test_single.py",
+        "sympy/solvers/ode/tests/test_systems.py",
+        "sympy/solvers/tests/test_solvers.py",
+        "sympy/stats/tests/test_continuous_rv.py",
         "sympy/utilities/tests/test_wester.py"
       ]
     }
