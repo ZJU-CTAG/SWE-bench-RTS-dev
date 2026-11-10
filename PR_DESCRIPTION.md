@@ -56,11 +56,7 @@ The additional results are written to `namerts_regression` in the existing `repo
 | `swebench/harness/namerts/policy.py` | Added | Read policies and persist newly identified slow tests safely across concurrent workers |
 | `swebench/harness/run_evaluation.py` | Modified | Add optional parameters, invoke RTS after the original evaluation passes, and combine verdicts |
 | `swebench/cli/evaluate.py` | Modified | Add RTS enablement and timeout options to `swebench eval` |
-| `tests/test_namerts.py` | Added | Tests for initialization, artifacts, runners, grading, and compatibility with the original workflow |
-| `tests/test_namerts_policy.py` | Added | Tests for exclusions, dependency configuration, and consistent filtering across the three stages |
-| `tests/test_namerts_selection_workers.py` | Added | Tests for selection concurrency configuration |
-| `tests/test_namerts_prepare.py` | Added | Tests for full-dataset/selected-instance initialization, unsupported-instance skipping, and artifact reuse |
-| `.github/workflows/pytest.yaml` | Modified | Exclude the new RTS-specific tests from default CI; keep running the existing tests without checking out the submodule |
+| `tests/test_namerts.py` | Added | Core integration tests for RTS enablement, grading against the golden baseline, initialization and artifact reuse, filtering, timeouts, and selection concurrency |
 | `pyproject.toml` | Modified | Include `instance_policy.json` in the installed package |
 | `.gitignore` | Modified | Ignore local artifacts and the policy write-lock file |
 
@@ -163,14 +159,13 @@ python -m swebench.harness.run_evaluation \
 
 #### Running RTS-specific tests
 
-Default CI runs the existing tests and skips `tests/test_namerts*.py`, without initializing the NameRTS submodule. To run the RTS-specific tests manually:
+The core RTS integration tests are consolidated in `tests/test_namerts.py` and run in default CI alongside the existing tests. They test the harness integration using mocked NameRTS and Docker interfaces, without requiring the submodule or a Docker daemon. To run them separately:
 
 ```bash
-git submodule update --init --recursive
-pytest tests/test_namerts*.py
+pytest tests/test_namerts.py
 ```
 
-This exclusion applies only to CI; local pytest discovery is unchanged.
+The upstream CI workflow requires no changes.
 
 ### 5. Experimental results
 
