@@ -33,3 +33,9 @@ def test_public_defaults_and_reject_invalid_workers():
     with pytest.raises(ValueError, match="positive"):
         runtime.run_selection(None, None, None, patch_base="base", workers=1,
                               per_file_timeout=180, timeout=3600, selection_workers=0)
+
+
+def test_legacy_image_rejected_before_enabling_hardcoded_pool(monkeypatch):
+    monkeypatch.setattr(container_bridge, "configure_timeout", lambda value: SimpleNamespace())
+    with pytest.raises(RuntimeError, match="lacks configurable"):
+        container_bridge.command_select(SimpleNamespace(selection_workers=4, per_file_timeout=180))
