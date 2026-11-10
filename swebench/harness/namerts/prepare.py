@@ -27,6 +27,7 @@ from swebench.harness.namerts.artifacts import (
     MANIFEST_FILENAME,
     PARENT_CACHE_FILENAME,
     RUNTIME_RECIPE_VERSION,
+    load_artifact,
     normalize_test_results,
     sha256_file,
     sha256_text,
@@ -43,6 +44,7 @@ from swebench.harness.namerts.runtime import (
 )
 from swebench.harness.utils import load_swebench_dataset, make_test_spec, str2bool
 from swebench.harness.namerts.policy import read_policy, record_slow_tests
+from swebench.harness.namerts.evaluation import is_unsupported_instance
 from swebench.image_builder.constants import CONTAINER_USER, CONTAINER_WORKDIR
 from swebench.logger import close_logger, setup_logger
 
@@ -469,9 +471,12 @@ def prepare_instance(
     artifact_root.mkdir(parents=True, exist_ok=True)
     destination = artifact_root / test_spec.instance_id
     if destination.exists() and not force_rebuild:
-        raise FileExistsError(
-            f"Artifact already exists: {destination}; use --force_rebuild true"
-        )
+        artifact = load_artifact(artifact_root, test_spec, instance)
+        runtime = artifact.manifest["runtime"]
+        for name_key, id_key in (("official_image", "official_image_id"), ("image", "image_id")):
+            if client.images.get(runtime[name_key]).id != runtime[id_key]:
+                raise ValueError("Artifact image changed; use --force_rebuild true")
+        return destination
     staging = Path(
         tempfile.mkdtemp(prefix=f".{test_spec.instance_id}.tmp.", dir=artifact_root)
     )
@@ -671,7 +676,7 @@ def _resolve_dataset_path(dataset_name: str, split: str) -> str:
 def main(
     dataset_name: str,
     split: str,
-    instance_ids: list[str],
+    instance_ids: list[str] | None,
     artifact_root: str,
     namerts_source: str,
     workers: int,
@@ -685,23 +690,28 @@ def main(
         _resolve_dataset_path(dataset_name, split), split, instance_ids
     )
     client = docker.from_env()
-    for index, instance in enumerate(instances, start=1):
-        print(
-            f"[NameRTS prepare] {index}/{len(instances)} {instance['instance_id']}",
-            flush=True,
-        )
-        destination = prepare_instance(
-            client,
-            instance,
-            artifact_root,
-            namerts_source,
-            workers=workers,
-            per_file_timeout=per_file_timeout,
-            total_timeout=total_timeout,
-            force_rebuild=force_rebuild,
-            image_pull_timeout=image_pull_timeout,
-        )
-        print(f"Prepared {destination}", flush=True)
+    try:
+        for index, instance in enumerate(instances, start=1):
+            instance_id = instance["instance_id"]
+            print(f"[NameRTS prepare] {index}/{len(instances)} {instance_id}", flush=True)
+            if is_unsupported_instance(instance_id):
+                print(f"Skipped {instance_id}: unsupported Python runtime; official evaluation only", flush=True)
+                continue
+            destination = prepare_instance(
+                client,
+                instance,
+                artifact_root,
+                namerts_source,
+                workers=workers,
+                per_file_timeout=per_file_timeout,
+                total_timeout=total_timeout,
+                slow_test_threshold=slow_test_threshold,
+                force_rebuild=force_rebuild,
+                image_pull_timeout=image_pull_timeout,
+            )
+            print(f"Artifact ready: {destination}", flush=True)
+    finally:
+        client.close()
 
 
 def parse_args() -> argparse.Namespace:
@@ -710,7 +720,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--dataset_name", required=True)
     parser.add_argument("--split", default="test")
-    parser.add_argument("--instance_ids", nargs="+", required=True)
+    parser.add_argument("--instance_ids", nargs="+", help="Instance IDs; omitted to prepare the entire split")
     parser.add_argument("--artifact_root", default="namerts_artifacts")
     parser.add_argument("--namerts_source", default=str(DEFAULT_NAMERTS_SOURCE))
     parser.add_argument(
