@@ -28,9 +28,6 @@ from swebench.harness.namerts.artifacts import (
     sha256_file,
     sha256_text,
 )
-from swebench.harness.namerts.container_bridge import (
-    is_collection_failure,
-)
 from swebench.harness.namerts.evaluation import (
     UNSUPPORTED_INSTANCE_IDS,
     reusable_regression_report,
@@ -362,6 +359,8 @@ def test_grouped_failure_identity_is_independent_of_scope(tmp_path):
     [
         ("ERROR collecting testing/test_a.py", 2),
         ("internal error", 3),
+        ("usage error", 4),
+        ("no tests collected", 5),
         ("FAILED testing/test_a.py::test_before_kill", 137),
         ("", 0),
     ],
@@ -377,6 +376,45 @@ def test_empty_regression_scope_does_not_collect_everything():
     assert result["process_count"] == 0
 
 
+@pytest.mark.parametrize("failed", [False, True])
+def test_logged_execution_preserves_result_or_exception(tmp_path, monkeypatch, failed):
+    from swebench.harness.namerts import runtime
+
+    error = runtime.NameRTSRuntimeError("command failed")
+    def execute(container, command, timeout):
+        assert (container, command, timeout) == (None, "command", 3600)
+        if failed:
+            raise error
+        return "output", 1.25
+
+    monkeypatch.setattr(runtime, "_run_bridge", execute)
+    path = tmp_path / "execution.log"
+    if failed:
+        with pytest.raises(runtime.NameRTSRuntimeError) as caught:
+            runtime._run_logged(None, "command", path, 3600)
+        assert caught.value is error
+        assert path.read_text() == str(error)
+    else:
+        assert runtime._run_logged(None, "command", path, 3600) == ("output", 1.25)
+        assert path.read_text() == "output"
+
+
+@pytest.mark.parametrize("command", ["prepare", "select", "run-tests"])
+def test_shared_bridge_command_quotes_arguments(command):
+    import shlex
+    from swebench.harness.namerts.runtime import _bridge_command, CONTAINER_BRIDGE
+
+    result = _bridge_command(command, namerts_env="environment with spaces",
+                             project_name="project", repo_head="abc123", workers=1,
+                             per_file_timeout=180, extra_args=["--output", "/tmp/a b"])
+    assert shlex.split(result) == [
+        "conda", "run", "--no-capture-output", "-n", "environment with spaces",
+        "python", str(CONTAINER_BRIDGE), command, "--repo-root", "/testbed",
+        "--project-name", "project", "--parent", "abc123", "--workers", "1",
+        "--per-file-timeout", "180", "--output", "/tmp/a b",
+    ]
+
+
 def test_slow_filter_only_changes_regression_selection():
     selection = {"tests_to_run": ["testing/test_a.py", "testing/test_slow.py"]}
     baseline = {"slow_test_files": ["testing/test_slow.py"]}
@@ -384,18 +422,6 @@ def test_slow_filter_only_changes_regression_selection():
     assert filtered["tests_to_run"] == ["testing/test_a.py"]
     assert filtered["slow_excluded_tests"] == ["testing/test_slow.py"]
     assert selection["tests_to_run"] == ["testing/test_a.py", "testing/test_slow.py"]
-
-
-def test_collection_detection():
-    assert is_collection_failure(
-        {"return_code": 2, "stdout": "ERROR collecting tests/a.py"}
-    )
-    assert not is_collection_failure(
-        {"return_code": 1, "stdout": "FAILED tests/a.py::test_a"}
-    )
-    assert not is_collection_failure(
-        {"return_code": 1, "stdout": "captured: ERROR collecting inner.py\n981 failed, 787 passed"}
-    )
 
 
 def test_parsed_failure_identity_removes_ephemeral_values():

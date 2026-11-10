@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 import os
-import shlex
 import shutil
 import subprocess
 import tempfile
@@ -35,6 +34,7 @@ from swebench.harness.namerts.artifacts import (
 )
 from swebench.harness.namerts.runtime import (
     copy_from_container,
+    _bridge_command,
     _run_bridge,
     run_grouped_tests,
     make_harness_test_command_prefix,
@@ -383,27 +383,16 @@ def _run_preparation(
         copy_to_container(
             container, test_command, PurePosixPath("/tmp/test-command.txt")
         )
-        arguments = [
-            "conda",
-            "run",
-            "--no-capture-output",
-            "-n",
-            namerts_env,
-            "python",
-            "/opt/namerts/swebench_bridge.py",
+        command = _bridge_command(
             "prepare",
+            namerts_env=namerts_env,
+            project_name=project_name,
+            repo_head=repo_head,
+            workers=workers,
+            per_file_timeout=per_file_timeout,
+            extra_args=[
             "--instance-policy",
             "/tmp/namerts-policy.json",
-            "--repo-root",
-            CONTAINER_WORKDIR,
-            "--project-name",
-            project_name,
-            "--parent",
-            repo_head,
-            "--workers",
-            str(workers),
-            "--per-file-timeout",
-            str(per_file_timeout),
             "--slow-test-threshold",
             str(slow_test_threshold),
             "--runner-script",
@@ -420,8 +409,8 @@ def _run_preparation(
             "/tmp/parent_cache.tar.gz",
             "--baseline-output",
             "/tmp/golden_baseline.json",
-        ]
-        command = " ".join(shlex.quote(argument) for argument in arguments)
+            ],
+        )
         output, runtime = _run_bridge(container, command, None)
         (staging / "preparation.log").write_text(output)
         logger.info("NameRTS preparation runtime: %.2f seconds", runtime)
@@ -438,11 +427,10 @@ def _run_preparation(
         baseline_path = staging / GOLDEN_BASELINE_FILENAME
         prepared = json.loads(baseline_path.read_text())
         record_slow_tests(instance_id, prepared["slow_test_files"])
-        if any(t["return_code"] in (2, 3, 4, 127) and not t["timed_out"]
-               for t in prepared["instrumentation_results"]):
+        if prepared["instrumentation_errors"]:
             raise RuntimeError("Instrumentation collection/runner error; see baseline timings")
         baseline = run_grouped_tests(
-            container, json.loads(baseline_path.read_text()), staging, total_timeout
+            container, prepared, staging, total_timeout
         )
         baseline["timing"]["golden_test_seconds"] = baseline["duration"]
         baseline_path.write_text(json.dumps(baseline, indent=2, sort_keys=True))

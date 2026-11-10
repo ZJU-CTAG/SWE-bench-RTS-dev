@@ -91,6 +91,16 @@ class NameRTSArtifact:
         return self.manifest["runtime"]["project_name"]
 
 
+def _check_fields(actual: dict, expected: dict, message: str) -> None:
+    mismatches = {
+        key: {"expected": value, "actual": actual.get(key)}
+        for key, value in expected.items()
+        if actual.get(key) != value
+    }
+    if mismatches:
+        raise NameRTSArtifactError(f"{message}: {mismatches}")
+
+
 def load_artifact(
     artifact_root: Path | str, test_spec: TestSpec, instance: dict
 ) -> NameRTSArtifact:
@@ -109,15 +119,8 @@ def load_artifact(
         "repo": test_spec.repo,
         "base_commit": instance["base_commit"],
     }
-    mismatches = {
-        key: {"expected": value, "actual": manifest.get(key)}
-        for key, value in expected.items()
-        if manifest.get(key) != value
-    }
-    if mismatches:
-        raise NameRTSArtifactError(
-            f"NameRTS manifest does not match {test_spec.instance_id}: {mismatches}"
-        )
+    _check_fields(manifest, expected,
+                  f"NameRTS manifest does not match {test_spec.instance_id}")
     if manifest.get("language") != "py":
         raise NameRTSArtifactError("NameRTS currently supports Python instances only")
 
@@ -155,21 +158,9 @@ def load_artifact(
     ):
         if not isinstance(runtime, dict) or not runtime.get(key):
             raise NameRTSArtifactError(f"Missing NameRTS runtime field: {key}")
-    runtime_mismatches = {}
-    if runtime["official_image"] != test_spec.image:
-        runtime_mismatches["official_image"] = {
-            "expected": test_spec.image,
-            "actual": runtime["official_image"],
-        }
-    if runtime["recipe_version"] != RUNTIME_RECIPE_VERSION:
-        runtime_mismatches["recipe_version"] = {
-            "expected": RUNTIME_RECIPE_VERSION,
-            "actual": runtime["recipe_version"],
-        }
-    if runtime_mismatches:
-        raise NameRTSArtifactError(
-            f"NameRTS runtime provenance mismatch: {runtime_mismatches}"
-        )
+    _check_fields(runtime, {"official_image": test_spec.image,
+                            "recipe_version": RUNTIME_RECIPE_VERSION},
+                  "NameRTS runtime provenance mismatch")
 
     dataset = manifest.get("dataset")
     expected_dataset = {
@@ -178,15 +169,8 @@ def load_artifact(
         "eval_type": test_spec.eval_type,
     }
     actual_dataset = dataset if isinstance(dataset, dict) else {}
-    dataset_mismatches = {
-        key: {"expected": value, "actual": actual_dataset.get(key)}
-        for key, value in expected_dataset.items()
-        if actual_dataset.get(key) != value
-    }
-    if dataset_mismatches:
-        raise NameRTSArtifactError(
-            f"NameRTS dataset execution provenance mismatch: {dataset_mismatches}"
-        )
+    _check_fields(actual_dataset, expected_dataset,
+                  "NameRTS dataset execution provenance mismatch")
 
     preparation = manifest.get("preparation")
     expected_hashes = {
@@ -194,16 +178,8 @@ def load_artifact(
         "test_patch_sha256": sha256_text(instance["test_patch"]),
     }
     actual_hashes = preparation if isinstance(preparation, dict) else {}
-    patch_mismatches = {
-        key: {"expected": value, "actual": actual_hashes.get(key)}
-        for key, value in expected_hashes.items()
-        if actual_hashes.get(key) != value
-    }
-    if patch_mismatches:
-        raise NameRTSArtifactError(
-            "NameRTS artifact patch provenance does not match "
-            f"{test_spec.instance_id}: {patch_mismatches}"
-        )
+    _check_fields(actual_hashes, expected_hashes,
+                  f"NameRTS artifact patch provenance does not match {test_spec.instance_id}")
     if actual_hashes.get("test_execution") != "grouped":
         raise NameRTSArtifactError("NameRTS artifact does not use grouped execution")
     test_command_sha256 = actual_hashes.get("harness_test_command_sha256")
@@ -283,8 +259,6 @@ def load_artifact(
 
 def normalize_test_results(test_spec: TestSpec, payload: dict) -> dict[str, Any]:
     """Compare official parser case IDs, never scope-dependent group exit IDs."""
-    from swebench.harness.namerts.container_bridge import is_collection_failure
-
     tests = payload.get("tests")
     if (
         payload.get("execution_mode") != "grouped"
@@ -298,10 +272,6 @@ def normalize_test_results(test_spec: TestSpec, payload: dict) -> dict[str, Any]
     output = str(payload.get("stdout", "")) + "\n" + str(payload.get("stderr", ""))
     if payload.get("return_code") not in (0, 1):
         raise NameRTSArtifactError("Grouped runner did not exit normally")
-    if is_collection_failure(payload):
-        raise NameRTSArtifactError(
-            "Grouped collection failed; baseline comparison is unsafe"
-        )
     statuses = PARSER_REGISTRY[test_spec.log_parser](output, test_spec)
     failed = {TestStatus.FAILED.value, TestStatus.ERROR.value}
     failures = {

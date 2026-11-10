@@ -240,27 +240,6 @@ def reset_for_patch(repo_path, patch_base, patch_path):
             os.unlink(candidate)
 
 
-def is_collection_failure(result):
-    if result.get("return_code") in (0, 1) or result.get("timed_out"):
-        return False
-    output = "\n".join(
-        (str(result.get("stdout", "")), str(result.get("stderr", "")))
-    ).lower()
-    collection_markers = (
-        "error collecting ",
-        "error during collection",
-        "errors during collection",
-        "importerror while importing test module",
-        "conftestimportfailure",
-        "could not load conftest",
-    )
-    if any(marker in output for marker in collection_markers):
-        return True
-    return result.get("return_code") == 5 and (
-        "no tests ran" in output or "no tests collected" in output
-    )
-
-
 def write_test_script(repo_path, tests, test_command_path, output_path, scope):
     """Prepare one official runner invocation; the host owns its timeout."""
     from src.config import get_test_filter_args, get_test_target

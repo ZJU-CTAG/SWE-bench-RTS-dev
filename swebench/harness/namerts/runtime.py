@@ -86,9 +86,11 @@ def copy_from_container(container, source: PurePosixPath, destination: Path) -> 
 
 
 def _bridge_command(
-    artifact: NameRTSArtifact,
     command: str,
     *,
+    namerts_env: str,
+    project_name: str,
+    repo_head: str,
     workers: int,
     per_file_timeout: int,
     extra_args: list[str],
@@ -98,16 +100,16 @@ def _bridge_command(
         "run",
         "--no-capture-output",
         "-n",
-        artifact.namerts_env,
+        namerts_env,
         "python",
         str(CONTAINER_BRIDGE),
         command,
         "--repo-root",
         CONTAINER_WORKDIR,
         "--project-name",
-        artifact.project_name,
+        project_name,
         "--parent",
-        artifact.repo_head,
+        repo_head,
         "--workers",
         str(workers),
         "--per-file-timeout",
@@ -138,6 +140,23 @@ def _run_bridge(container, command: str, timeout: int | None) -> tuple[str, floa
             f"{output[: match.start()][-4000:]}"
         )
     return output[: match.start()], runtime
+
+
+def _run_logged(container, command: str, log_path: Path, timeout: int | None):
+    try:
+        output, runtime = _run_bridge(container, command, timeout)
+    except Exception as error:
+        log_path.write_text(str(error))
+        raise
+    log_path.write_text(output)
+    return output, runtime
+
+
+def _run_script(container, script: str, path: Path, destination: PurePosixPath,
+                log_path: Path, timeout: int) -> None:
+    path.write_text(script)
+    copy_to_container(container, path, destination)
+    _run_logged(container, f"/bin/bash {destination}", log_path, timeout)
 
 
 def split_eval_script(eval_script: str, base_commit: str) -> tuple[str, str]:
@@ -300,17 +319,9 @@ def run_install_script(
     log_dir: Path,
     timeout: int,
 ) -> None:
-    path = log_dir / "namerts_install.sh"
-    path.write_text(make_install_script(eval_script, base_commit))
-    copy_to_container(container, path, CONTAINER_INSTALL_SCRIPT)
-    try:
-        output, _ = _run_bridge(
-            container, f"/bin/bash {CONTAINER_INSTALL_SCRIPT}", timeout
-        )
-    except Exception as error:
-        (log_dir / "namerts_install.log").write_text(str(error))
-        raise
-    (log_dir / "namerts_install.log").write_text(output)
+    _run_script(container, make_install_script(eval_script, base_commit),
+                log_dir / "namerts_install.sh", CONTAINER_INSTALL_SCRIPT,
+                log_dir / "namerts_install.log", timeout)
 
 
 def run_selection(
@@ -328,8 +339,10 @@ def run_selection(
         raise ValueError("selection_workers must be positive")
     copy_to_container(container, artifact.cache_path, CONTAINER_CACHE)
     command = _bridge_command(
-        artifact,
         "select",
+        namerts_env=artifact.namerts_env,
+        project_name=artifact.project_name,
+        repo_head=artifact.repo_head,
         workers=workers,
         per_file_timeout=per_file_timeout,
         extra_args=[
@@ -345,12 +358,7 @@ def run_selection(
             str(CONTAINER_SELECTION),
         ],
     )
-    try:
-        output, runtime = _run_bridge(container, command, timeout)
-    except Exception as error:
-        (log_dir / "namerts_selection.log").write_text(str(error))
-        raise
-    (log_dir / "namerts_selection.log").write_text(output)
+    _, runtime = _run_logged(container, command, log_dir / "namerts_selection.log", timeout)
     selection_path = log_dir / "namerts_selection.json"
     try:
         copy_from_container(container, CONTAINER_SELECTION, selection_path)
@@ -382,12 +390,7 @@ def restore_test_environment(
         f"git apply --check {setup_patch}\n"
         f"git apply {setup_patch}\nfi\n)\n"
     )
-    try:
-        output, _ = _run_bridge(container, command, timeout)
-    except Exception as error:
-        (log_dir / "namerts_official_setup.log").write_text(str(error))
-        raise
-    (log_dir / "namerts_official_setup.log").write_text(output)
+    _run_logged(container, command, log_dir / "namerts_official_setup.log", timeout)
 
 
 def apply_test_patch(
@@ -397,17 +400,9 @@ def apply_test_patch(
     log_dir: Path,
     timeout: int,
 ) -> None:
-    path = log_dir / "namerts_test_setup.sh"
-    path.write_text(make_test_script(eval_script, base_commit))
-    copy_to_container(container, path, CONTAINER_TEST_SCRIPT)
-    try:
-        output, _ = _run_bridge(
-            container, f"/bin/bash {CONTAINER_TEST_SCRIPT}", timeout
-        )
-    except Exception as error:
-        (log_dir / "namerts_test_patch.log").write_text(str(error))
-        raise
-    (log_dir / "namerts_test_patch.log").write_text(output)
+    _run_script(container, make_test_script(eval_script, base_commit),
+                log_dir / "namerts_test_setup.sh", CONTAINER_TEST_SCRIPT,
+                log_dir / "namerts_test_patch.log", timeout)
 
 
 def run_selected_tests(
@@ -428,8 +423,10 @@ def run_selected_tests(
     command_path.write_text(test_command + "\n")
     copy_to_container(container, command_path, CONTAINER_TEST_COMMAND)
     command = _bridge_command(
-        artifact,
         "run-tests",
+        namerts_env=artifact.namerts_env,
+        project_name=artifact.project_name,
+        repo_head=artifact.repo_head,
         workers=workers,
         per_file_timeout=per_file_timeout,
         extra_args=[
@@ -443,12 +440,7 @@ def run_selected_tests(
             str(CONTAINER_TARGET_RESULTS),
         ],
     )
-    try:
-        output, runtime = _run_bridge(container, command, timeout)
-    except Exception as error:
-        (log_dir / "namerts_test.log").write_text(str(error))
-        raise
-    (log_dir / "namerts_test.log").write_text(output)
+    _, runtime = _run_logged(container, command, log_dir / "namerts_test.log", timeout)
     result_path = log_dir / "namerts_test_output.json"
     try:
         copy_from_container(container, CONTAINER_TARGET_RESULTS, result_path)
