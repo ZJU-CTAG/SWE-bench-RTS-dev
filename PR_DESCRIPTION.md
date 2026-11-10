@@ -60,7 +60,7 @@ The additional results are written to `namerts_regression` in the existing `repo
 | `tests/test_namerts_policy.py` | Added | Tests for exclusions, dependency configuration, and consistent filtering across the three stages |
 | `tests/test_namerts_selection_workers.py` | Added | Tests for selection concurrency configuration |
 | `tests/test_namerts_prepare.py` | Added | Tests for full-dataset/selected-instance initialization, unsupported-instance skipping, and artifact reuse |
-| `.github/workflows/pytest.yaml` | Modified | Initialize the submodule during CI checkout |
+| `.github/workflows/pytest.yaml` | Modified | Exclude the new RTS-specific tests from default CI; keep running the existing tests without checking out the submodule |
 | `pyproject.toml` | Modified | Include `instance_policy.json` in the installed package |
 | `.gitignore` | Modified | Ignore local artifacts and the policy write-lock file |
 
@@ -160,6 +160,17 @@ python -m swebench.harness.run_evaluation \
 - `prepare_instance(client, instance, artifact_root, namerts_source, *, total_timeout=1800, slow_test_threshold=180, force_rebuild=False, ...)`: initialize one instance or reuse its valid artifact, returning the artifact directory.
 - `run_instance(test_spec, pred, client, run_id, *, instance=..., namerts_artifact_root=..., namerts_selection_workers=4, namerts_timeout=None, ...)`: enable RTS through the existing single-instance evaluation interface.
 - `run_instances(...)` and `main(...)`: also accept `namerts_artifact_root`, `namerts_selection_workers`, and `namerts_timeout` for batch evaluation.
+
+#### Running RTS-specific tests
+
+Default CI runs the existing tests and skips `tests/test_namerts*.py`, without initializing the NameRTS submodule. To run the RTS-specific tests manually:
+
+```bash
+git submodule update --init --recursive
+pytest tests/test_namerts*.py
+```
+
+This exclusion applies only to CI; local pytest discovery is unchanged.
 
 ### 5. Experimental results
 

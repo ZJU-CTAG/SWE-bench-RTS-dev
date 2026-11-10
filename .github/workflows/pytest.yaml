@@ -32,8 +32,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-        with:
-          submodules: true
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
@@ -56,7 +54,7 @@ jobs:
       - name: Run pytest
         uses: sjvrijn/pytest-last-failed@v2
         with:
-          pytest-args: '--exitfirst --cov'
+          pytest-args: '--exitfirst --cov --ignore-glob=tests/test_namerts*.py'
       - name: Explicitly convert coverage to xml
         run: coverage xml
       - name: Upload coverage reports to Codecov
